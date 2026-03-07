@@ -54,11 +54,24 @@ sudo ufw --force enable 2>/dev/null || true
 # ---- 6. Create swap (useful for smaller instances) ----
 echo "[6/6] Creating swap file..."
 if [ ! -f /swapfile ]; then
-    sudo fallocate -l 4G /swapfile
-    sudo chmod 600 /swapfile
-    sudo mkswap /swapfile
-    sudo swapon /swapfile
-    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+    AVAIL_MB=$(df / --output=avail -BM | tail -1 | tr -dc '0-9')
+    if [ "$AVAIL_MB" -gt 3000 ]; then
+        SWAP_SIZE="2G"
+    elif [ "$AVAIL_MB" -gt 1500 ]; then
+        SWAP_SIZE="1G"
+    else
+        SWAP_SIZE=""
+        echo "WARNING: Less than 1.5 GB free disk space — skipping swap."
+        echo "Consider resizing your EBS volume (see below)."
+    fi
+    if [ -n "$SWAP_SIZE" ]; then
+        sudo fallocate -l $SWAP_SIZE /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+        echo "Swap ($SWAP_SIZE) created."
+    fi
 fi
 
 echo ""
