@@ -21,8 +21,8 @@ if [ ! -f .env ]; then
 fi
 
 # ---- Step 1: Pull & Build ----
-echo "[1/4] Building Docker images..."
-docker compose build --parallel
+echo "[1/4] Building Docker images (sequential to save memory)..."
+docker compose build
 
 # ---- Step 2: Start infrastructure first ----
 echo "[2/4] Starting databases & message queue..."
