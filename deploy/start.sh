@@ -21,8 +21,38 @@ if [ ! -f .env ]; then
 fi
 
 # ---- Step 1: Pull & Build ----
-echo "[1/4] Building Docker images (sequential to save memory)..."
-docker compose build
+echo "[1/4] Building Docker images (one at a time to save memory)..."
+
+SERVICES=(
+  api-gateway
+  admin-service
+  voice-service
+  tool-execution-service
+  recording-service
+  ai-engine-service
+  analytics-service
+  qa-service
+  knowledge-base-service
+  transfer-service
+  ivr-service
+  sms-service
+  sentiment-service
+  email-service
+  whatsapp-service
+  billing-service
+  campaigns-service
+  voicemail-service
+  queue-service
+  monitoring-service
+  survey-service
+  frontend
+)
+
+for svc in "${SERVICES[@]}"; do
+  echo "  Building $svc..."
+  docker compose build "$svc" 2>&1 | tail -1
+done
+echo "All images built."
 
 # ---- Step 2: Start infrastructure first ----
 echo "[2/4] Starting databases & message queue..."
