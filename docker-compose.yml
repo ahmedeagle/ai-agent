@@ -1,0 +1,335 @@
+version: '3.8'
+
+services:
+  # Databases
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ai_agent_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+
+  # Backend Services
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+
+  voice-service:
+    build:
+      context: ./services/voice-service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    depends_on:
+      - rabbitmq
+      - redis
+    env_file:
+      - .env
+
+  tool-execution-service:
+    build:
+      context: ./services/tool-execution-service
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    depends_on:
+      - postgres
+      - rabbitmq
+    env_file:
+      - .env
+
+  recording-service:
+    build:
+      context: ./services/recording-service
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    depends_on:
+      - mongodb
+      - rabbitmq
+    env_file:
+      - .env
+
+  admin-service:
+    build:
+      context: ./services/admin-service
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    depends_on:
+      - postgres
+      - mongodb
+    env_file:
+      - .env
+
+  # Python AI Services
+  ai-engine-service:
+    build:
+      context: ./services/ai-engine-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+    env_file:
+      - .env
+
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - elasticsearch
+    env_file:
+      - .env
+
+  qa-service:
+    build:
+      context: ./services/qa-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    depends_on:
+      - postgres
+      - mongodb
+    env_file:
+      - .env
+
+  knowledge-base-service:
+    build:
+      context: ./services/knowledge-base-service
+      dockerfile: Dockerfile
+    ports:
+      - "3008:3008"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  transfer-service:
+    build:
+      context: ./services/transfer-service
+      dockerfile: Dockerfile
+    ports:
+      - "3009:3009"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+
+  ivr-service:
+    build:
+      context: ./services/ivr-service
+      dockerfile: Dockerfile
+    ports:
+      - "3010:3010"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  sms-service:
+    build:
+      context: ./services/sms-service
+      dockerfile: Dockerfile
+    ports:
+      - "3011:3011"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+
+  sentiment-service:
+    build:
+      context: ./services/sentiment-service
+      dockerfile: Dockerfile
+    ports:
+      - "3012:3012"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  email-service:
+    build:
+      context: ./services/email-service
+      dockerfile: Dockerfile
+    ports:
+      - "3013:3013"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  whatsapp-service:
+    build:
+      context: ./services/whatsapp-service
+      dockerfile: Dockerfile
+    ports:
+      - "3014:3014"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+
+  billing-service:
+    build:
+      context: ./services/billing-service
+      dockerfile: Dockerfile
+    ports:
+      - "3015:3015"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  campaigns-service:
+    build:
+      context: ./services/campaigns-service
+      dockerfile: Dockerfile
+    ports:
+      - "3016:3016"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  voicemail-service:
+    build:
+      context: ./services/voicemail-service
+      dockerfile: Dockerfile
+    ports:
+      - "3017:3017"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  queue-service:
+    build:
+      context: ./services/queue-service
+      dockerfile: Dockerfile
+    ports:
+      - "3018:3018"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  monitoring-service:
+    build:
+      context: ./services/monitoring-service
+      dockerfile: Dockerfile
+    ports:
+      - "3019:3019"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  survey-service:
+    build:
+      context: ./services/survey-service
+      dockerfile: Dockerfile
+    ports:
+      - "3020:3020"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3021:3000"
+    depends_on:
+      - api-gateway
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
+  elasticsearch_data:

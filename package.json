@@ -1,0 +1,32 @@
+{
+  "name": "ai-agent-call-center",
+  "version": "1.0.0",
+  "description": "Enterprise AI-powered call center platform with voice agents, QA, and analytics",
+  "private": true,
+  "workspaces": [
+    "services/api-gateway",
+    "services/voice-service",
+    "services/tool-execution-service",
+    "services/recording-service",
+    "services/admin-service",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "turbo": "^1.12.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "knowledge-base-service",
+  "version": "1.0.0",
+  "description": "RAG Knowledge Base Service with vector embeddings",
+  "main": "main.py",
+  "scripts": {
+    "start": "python main.py",
+    "dev": "uvicorn main:app --reload --port 3008"
+  },
+  "dependencies": {}
+}

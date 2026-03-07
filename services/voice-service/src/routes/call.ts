@@ -1,0 +1,92 @@
+import { Router } from 'express';
+import { CallSessionManager } from '../managers/callSession';
+import twilio from 'twilio';
+
+export default (sessionManager: CallSessionManager) => {
+  const router = Router();
+  const client = twilio(
+    process.env.TWILIO_ACCOUNT_SID!,
+    process.env.TWILIO_AUTH_TOKEN!
+  );
+
+  // Initiate outbound call
+  router.post('/outbound', async (req, res) => {
+    try {
+      const { to, agentId, companyId } = req.body;
+
+      const call = await client.calls.create({
+        to,
+        from: process.env.TWILIO_PHONE_NUMBER!,
+        url: `https://${req.get('host')}/webhook/voice/incoming`,
+        statusCallback: `https://${req.get('host')}/webhook/voice/status`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        record: true,
+        recordingStatusCallback: `https://${req.get('host')}/webhook/voice/recording`
+      });
+
+      // Store call metadata
+      await sessionManager.createSession({
+        callSid: call.sid,
+        to,
+        from: process.env.TWILIO_PHONE_NUMBER!,
+        agentId,
+        companyId,
+        direction: 'outbound'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          callSid: call.sid,
+          status: call.status
+        }
+      });
+    } catch (error) {
+      console.error('Outbound call error:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to initiate call'
+      });
+    }
+  });
+
+  // Get active calls
+  router.get('/active', async (req, res) => {
+    try {
+      const { companyId } = req.query;
+      const activeCalls = await sessionManager.getActiveCalls(companyId as string);
+      
+      res.json({
+        success: true,
+        data: activeCalls
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to fetch active calls'
+      });
+    }
+  });
+
+  // End call
+  router.post('/:callSid/end', async (req, res) => {
+    try {
+      const { callSid } = req.params;
+      
+      await client.calls(callSid).update({ status: 'completed' });
+      await sessionManager.endSession(callSid);
+
+      res.json({
+        success: true,
+        message: 'Call ended'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to end call'
+      });
+    }
+  });
+
+  return router;
+};
