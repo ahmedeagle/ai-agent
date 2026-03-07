@@ -62,8 +62,9 @@ sleep 15
 
 # ---- Step 3: Run Prisma migrations ----
 echo "[3/4] Running database migrations..."
-# We run prisma from the host since it needs DATABASE_URL
+# Override DATABASE_URL to use localhost (host runs prisma, not Docker)
 export $(grep -v '^#' .env | xargs)
+export DATABASE_URL="postgresql://user:password@localhost:5432/ai_agent_db"
 
 cd packages/database
 npx prisma generate 2>/dev/null || npm install prisma @prisma/client && npx prisma generate
