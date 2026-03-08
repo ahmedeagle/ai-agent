@@ -287,8 +287,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             prefix_padding_ms: 600,
             silence_duration_ms: 2000,
             create_response: true
-          },
-          max_response_output_tokens: 150
+          }
         }
       }));
     });
@@ -315,22 +314,16 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             break;
 
           case 'input_audio_buffer.speech_started':
-            // User started speaking — interrupt AI audio
-            logger.info('User speaking - interrupting AI audio');
-            session.aiSpeaking = false;
-            // Clear Twilio's audio playback buffer so AI voice stops immediately
+            // User started speaking — only clear Twilio playback buffer
+            // Do NOT cancel the OpenAI response — cancelling mid-sentence causes
+            // fragmented, incomplete answers. Let OpenAI finish generating;
+            // the Twilio buffer clear stops the caller from hearing overlapping audio.
+            logger.info('User speaking - clearing Twilio audio buffer');
             if (session.twilioWs?.readyState === WebSocket.OPEN && session.streamSid) {
               session.twilioWs.send(JSON.stringify({
                 event: 'clear',
                 streamSid: session.streamSid
               }));
-            }
-            // Cancel current OpenAI response so it stops generating
-            if (session.openaiWs?.readyState === WebSocket.OPEN) {
-              session.openaiWs.send(JSON.stringify({
-                type: 'response.cancel'
-              }));
-              session.responseInProgress = false;
             }
             break;
 
