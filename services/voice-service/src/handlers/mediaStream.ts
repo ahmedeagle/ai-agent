@@ -72,6 +72,7 @@ interface StreamSession {
   lastResponseEnd: number;        // timestamp of last response.done
   responseInProgress: boolean;    // true while a response is actively being generated
   postSpeechCooldownMs: number;   // ms to block audio after AI finishes speaking
+  waitingForResponse: boolean;    // true between response.create and first audio delta
 }
 
 const activeSessions = new Map<string, StreamSession>();
@@ -106,7 +107,8 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
       aiSpeaking: false,
       lastResponseEnd: 0,
       responseInProgress: false,
-      postSpeechCooldownMs: 1500
+      postSpeechCooldownMs: 2500,
+      waitingForResponse: false
     };
     activeSessions.set(callSid, session);
 
@@ -138,10 +140,11 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
             break;
 
           case 'media':
-            // Only forward audio when AI is NOT speaking AND cooldown has elapsed
-            // This prevents background noise and echo from being picked up as user speech
-            const inCooldown = (Date.now() - session.lastResponseEnd) < session.postSpeechCooldownMs;
-            if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady && !session.aiSpeaking && !inCooldown) {
+            // Only forward audio when AI is completely idle:
+            // - not speaking, not waiting for a response, not in post-speech cooldown
+            const isAiBusy = session.aiSpeaking || session.waitingForResponse || session.responseInProgress;
+            const inCooldown = session.lastResponseEnd > 0 && (Date.now() - session.lastResponseEnd) < session.postSpeechCooldownMs;
+            if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady && !isAiBusy && !inCooldown) {
               session.openaiWs.send(JSON.stringify({
                 type: 'input_audio_buffer.append',
                 audio: msg.media.payload
@@ -244,6 +247,8 @@ function trySendGreeting(session: StreamSession) {
     session.openaiWs.send(JSON.stringify({
       type: 'response.create'
     }));
+    // Block audio forwarding until greeting finishes
+    session.waitingForResponse = true;
   }
 }
 
@@ -278,9 +283,9 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
           },
           turn_detection: {
             type: 'server_vad',
-            threshold: 0.8,
-            prefix_padding_ms: 500,
-            silence_duration_ms: 1500,
+            threshold: 0.9,
+            prefix_padding_ms: 600,
+            silence_duration_ms: 2000,
             create_response: true
           },
           max_response_output_tokens: 150
@@ -341,6 +346,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             // Mark AI as actively speaking so we don't forward user audio (prevents echo)
             session.aiSpeaking = true;
             session.responseInProgress = true;
+            session.waitingForResponse = false;
             // Forward AI audio back to Twilio
             if (twilioWs.readyState === WebSocket.OPEN && session.streamSid) {
               twilioWs.send(JSON.stringify({
@@ -386,9 +392,10 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             break;
 
           case 'response.done':
-            // Mark AI as done speaking — allow user audio forwarding again
+            // Mark AI as done speaking — allow user audio forwarding again after cooldown
             session.aiSpeaking = false;
             session.responseInProgress = false;
+            session.waitingForResponse = false;
             session.lastResponseEnd = Date.now();
             // Log the full response output to debug
             const output = event.response?.output;
