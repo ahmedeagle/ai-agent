@@ -14,6 +14,13 @@ const KB_SERVICE_URL = `http://knowledge-base-service:${process.env.KNOWLEDGE_BA
 // To customize agent behavior, edit the agent's System Prompt via the Agents management page.
 const DEFAULT_SYSTEM_PROMPT = `You are a professional AI assistant handling phone calls. You are helpful, polite, and efficient.
 
+IMPORTANT RULES:
+- ALWAYS respond in English only, regardless of what language the caller uses.
+- Give ONE concise response per turn. Do NOT send multiple messages in a row.
+- Wait for the caller to finish speaking before responding.
+- Keep responses brief and conversational — this is a phone call, not an essay.
+- If the caller says goodbye, end the conversation politely in one sentence. Do NOT continue talking.
+
 On every new call:
 1. Greet the caller warmly and introduce yourself.
 2. Ask for the caller's name.
@@ -49,6 +56,9 @@ interface StreamSession {
   openaiReady: boolean;
   twilioReady: boolean;
   greetingSent: boolean;
+  aiSpeaking: boolean;            // true while AI is generating/playing audio
+  lastResponseEnd: number;        // timestamp of last response.done
+  responseInProgress: boolean;    // true while a response is actively being generated
 }
 
 const activeSessions = new Map<string, StreamSession>();
@@ -79,7 +89,10 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
       openaiReady: false,
       twilioReady: false,
       greetingSent: false,
-      twilioWs: ws
+      twilioWs: ws,
+      aiSpeaking: false,
+      lastResponseEnd: 0,
+      responseInProgress: false
     };
     activeSessions.set(callSid, session);
 
@@ -111,8 +124,9 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
             break;
 
           case 'media':
-            // Forward audio to OpenAI Realtime API if connected
-            if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady) {
+            // Only forward audio when AI is NOT actively speaking/generating
+            // This prevents background noise and echo from being picked up as user speech
+            if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady && !session.aiSpeaking) {
               session.openaiWs.send(JSON.stringify({
                 type: 'input_audio_buffer.append',
                 audio: msg.media.payload
@@ -244,9 +258,9 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
           },
           turn_detection: {
             type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 500
+            threshold: 0.65,
+            prefix_padding_ms: 500,
+            silence_duration_ms: 1200
           }
         }
       }));
@@ -276,6 +290,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
           case 'input_audio_buffer.speech_started':
             // User started speaking — interrupt AI audio
             logger.info('User speaking - interrupting AI audio');
+            session.aiSpeaking = false;
             // Clear Twilio's audio playback buffer so AI voice stops immediately
             if (session.twilioWs?.readyState === WebSocket.OPEN && session.streamSid) {
               session.twilioWs.send(JSON.stringify({
@@ -288,6 +303,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
               session.openaiWs.send(JSON.stringify({
                 type: 'response.cancel'
               }));
+              session.responseInProgress = false;
             }
             break;
 
@@ -300,6 +316,9 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             break;
 
           case 'response.audio.delta':
+            // Mark AI as actively speaking so we don't forward user audio (prevents echo)
+            session.aiSpeaking = true;
+            session.responseInProgress = true;
             // Forward AI audio back to Twilio
             if (twilioWs.readyState === WebSocket.OPEN && session.streamSid) {
               twilioWs.send(JSON.stringify({
@@ -345,6 +364,10 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             break;
 
           case 'response.done':
+            // Mark AI as done speaking — allow user audio forwarding again
+            session.aiSpeaking = false;
+            session.responseInProgress = false;
+            session.lastResponseEnd = Date.now();
             // Log the full response output to debug
             const output = event.response?.output;
             const statusDetails = event.response?.status_details;
