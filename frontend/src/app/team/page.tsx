@@ -190,7 +190,7 @@ export default function TeamPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {editingRole?.id === member.id ? (
+                      {editingRole?.id === member.id && editingRole ? (
                         <div className="flex items-center gap-2">
                           <select
                             value={editingRole.role}
@@ -202,7 +202,7 @@ export default function TeamPage() {
                             ))}
                           </select>
                           <button
-                            onClick={() => updateRoleMutation.mutate({ id: member.id, role: editingRole.role })}
+                            onClick={() => updateRoleMutation.mutate({ id: member.id, role: editingRole!.role })}
                             className="p-1 text-green-600 hover:bg-green-50 rounded"
                           >
                             <Check className="h-4 w-4" />
