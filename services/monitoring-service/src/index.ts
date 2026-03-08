@@ -81,7 +81,7 @@ app.get('/monitor/calls/active/:companyId', authenticateSupervisor, async (req: 
           select: {
             id: true,
             name: true,
-            voiceGender: true
+            voice: true
           }
         }
       },
@@ -120,10 +120,7 @@ app.get('/monitor/calls/:callId', authenticateSupervisor, async (req: any, res) 
             name: true
           }
         },
-        messages: {
-          orderBy: {timestamp: 'desc'},
-          take: 10
-        }
+        transcript: true
       }
     });
 
@@ -403,7 +400,8 @@ app.get('/monitor/history/:companyId', authenticateSupervisor, async (req: any, 
         call: {
           select: {
             id: true,
-            phone: true,
+            from: true,
+            to: true,
             status: true,
             startTime: true,
             endTime: true
@@ -508,9 +506,11 @@ app.get('/monitor/dashboard/:companyId', authenticateSupervisor, async (req: any
     });
 
     // Queue status
-    const queueSize = await prisma.queue.count({
+    const queueSize = await prisma.queueEntry.count({
       where: {
-        companyId,
+        queue: {
+          companyId
+        },
         status: 'waiting'
       }
     });
@@ -519,7 +519,9 @@ app.get('/monitor/dashboard/:companyId', authenticateSupervisor, async (req: any
     const availableAgents = await prisma.humanAgent.count({
       where: {
         companyId,
-        status: 'available'
+        status: {
+          status: 'available'
+        }
       }
     });
 

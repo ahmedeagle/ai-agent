@@ -1,0 +1,1034 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  plan      String   @default("free") // free, basic, premium, enterprise
+  minutesAllocated Int @default(0)
+  minutesUsed Int @default(0)
+  maxConcurrentAgents Int @default(1) // Billing: max concurrent AI agents allowed
+  currentConcurrentAgents Int @default(0) // Current active agents
+  
+  // Integration settings
+  twilioAccountSid String?
+  twilioAuthToken String?
+  twilioPhoneNumber String?
+  
+  // Email/SMTP settings
+  emailFrom String?
+  smtpHost String?
+  smtpPort Int?
+  smtpUser String?
+  smtpPassword String?  // Encrypted in production
+  smtpSecure Boolean @default(false)
+  
+  // WhatsApp Business API settings
+  whatsappNumber String?
+  whatsappPhoneId String?
+  whatsappToken String?  // Encrypted in production
+  
+  // Optional per-company AI API keys (if not using system defaults)
+  openaiApiKey String?  // Encrypted
+  deepgramApiKey String?  // Encrypted
+  elevenLabsApiKey String?  // Encrypted
+  
+  // Billing
+  subscriptionStatus String @default("trial") // trial, active, suspended, cancelled
+  billingEmail String?
+  
+  // Webhook settings
+  webhookUrl String?
+  webhookSecret String?
+  webhookEvents String[] @default(["call.completed", "call.failed", "escalation"])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  agents    Agent[]
+  calls     Call[]
+  tools     Tool[]
+  humanAgents HumanAgent[]
+  packages  Package[]
+  usageLogs UsageLog[]
+  invoices  Invoice[]
+  campaigns Campaign[]
+  ivrMenus  IVRMenu[]
+  smsMessages SMSMessage[]
+  emailMessages EmailMessage[]
+  whatsappMessages WhatsAppMessage[]
+  customers Customer[]
+  notifications Notification[]
+  surveys   Survey[]
+  qaRules   QARule[]
+
+  @@map("companies")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      String   @default("user") // user, admin, super_admin
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supervisedCalls CallMonitor[]
+
+  @@map("users")
+}
+
+model Agent {
+  id             String   @id @default(uuid())
+  name           String
+  language       String   @default("en")
+  voice          String   @default("default")
+  systemPrompt   String   @db.Text
+  phoneNumber    String?  @unique
+  tools          String[] @default([])
+  knowledgeBase  String?  @db.Text
+  escalationRules Json?
+  active         Boolean  @default(true)
+  companyId      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  calls          Call[]
+  qaRules        QARule[]
+
+  @@map("agents")
+}
+
+model Call {
+  id              String   @id @default(uuid())
+  callSid         String   @unique
+  from            String
+  to              String
+  direction       String   // inbound, outbound
+  status          String   // initiated, ringing, in-progress, completed, failed
+  duration        Int?
+  recordingUrl    String?
+  escalated       Boolean  @default(false)
+  escalationReason String?
+  agentId         String?
+  companyId       String
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transcript      Transcript?
+  recording       Recording?
+  toolCalls       ToolCall[]
+  qaResult        QAResult?
+  callMonitors    CallMonitor[]
+
+  @@index([companyId, createdAt])
+  @@index([status])
+  @@map("calls")
+}
+
+model Transcript {
+  id        String   @id @default(uuid())
+  callId    String   @unique
+  entries   Json     // Array of {speaker, text, timestamp}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  call      Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@map("transcripts")
+}
+
+model Recording {
+  id          String   @id @default(uuid())
+  callId      String   @unique
+  url         String
+  duration    Int
+  size        Int?
+  format      String   @default("wav")
+  createdAt   DateTime @default(now())
+
+  call        Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@map("recordings")
+}
+
+model Tool {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  endpoint    String
+  method      String   @default("POST")
+  apiKey      String?
+  headers     Json?
+  parameters  Json
+  active      Boolean  @default(true)
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  toolCalls   ToolCall[]
+
+  @@map("tools")
+}
+
+model ToolCall {
+  id         String   @id @default(uuid())
+  callId     String
+  toolId     String
+  parameters Json
+  result     Json?
+  success    Boolean  @default(false)
+  error      String?
+  executedAt DateTime @default(now())
+
+  call       Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  tool       Tool     @relation(fields: [toolId], references: [id])
+
+  @@index([callId])
+  @@map("tool_calls")
+}
+
+model QAResult {
+  id              String   @id @default(uuid())
+  callId          String   @unique
+  automatedScore  Float?
+  manualScore     Float?
+  ruleResults     Json?    // Results of individual rule checks
+  compliancePassed Boolean @default(true)
+  complianceIssues Json?
+  reviewerId      String?
+  reviewComments  String?  @db.Text
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  call            Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@map("qa_results")
+}
+
+model QARule {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  required    Boolean  @default(true)
+  active      Boolean  @default(true)
+  companyId   String
+  agentId     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent       Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([agentId])
+  @@map("qa_rules")
+}
+
+// ============ HUMAN AGENT & TRANSFER SYSTEM ============
+
+model HumanAgent {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  firstName       String
+  lastName        String
+  phoneNumber     String?
+  skills          String[] @default([]) // sales, support, technical, etc
+  languages       String[] @default(["en"])
+  maxConcurrent   Int      @default(3)
+  companyId       String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status          AgentStatus?
+  transfers       CallTransfer[]
+  monitoringSessions MonitoringSession[]
+
+  @@index([companyId, active])
+  @@map("human_agents")
+}
+
+model AgentStatus {
+  id              String   @id @default(uuid())
+  agentId         String   @unique
+  status          String   // available, busy, away, offline
+  currentCalls    Int      @default(0)
+  lastStatusChange DateTime @default(now())
+  statusReason    String?
+  updatedAt       DateTime @updatedAt
+
+  agent           HumanAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_status")
+}
+
+model CallTransfer {
+  id              String   @id @default(uuid())
+  callId          String
+  fromType        String   // ai, human
+  fromAgentId     String?
+  toType          String   // human, voicemail, external
+  toAgentId       String?
+  transferType    String   // warm, cold, escalation
+  reason          String?  @db.Text
+  status          String   // pending, accepted, rejected, completed, failed
+  briefing        String?  @db.Text // Context for warm transfer
+  acceptedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  toAgent         HumanAgent? @relation(fields: [toAgentId], references: [id])
+
+  @@index([callId])
+  @@index([toAgentId, status])
+  @@map("call_transfers")
+}
+
+// ============ IVR MENU SYSTEM ============
+
+model IVRMenu {
+  id              String   @id @default(uuid())
+  name            String
+  companyId       String
+  entryPrompt     String   @db.Text // "Press 1 for Sales, 2 for Support..."
+  language        String   @default("en")
+  timeout         Int      @default(5) // seconds
+  maxRetries      Int      @default(3)
+  options         Json     // [{key: "1", label: "Sales", action: "route", target: "agentId"}]
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sessions        IVRSession[]
+
+  @@index([companyId, active])
+  @@map("ivr_menus")
+}
+
+model IVRSession {
+  id              String   @id @default(uuid())
+  callSid         String
+  menuId          String
+  selections      Json     // [{menu: "main", selection: "1", timestamp}]
+  completed       Boolean  @default(false)
+  finalDestination String? // agentId, voicemail, external
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  menu            IVRMenu  @relation(fields: [menuId], references: [id])
+
+  @@index([callSid])
+  @@map("ivr_sessions")
+}
+
+// ============ SMS INTEGRATION ============
+
+model SMSMessage {
+  id              String   @id @default(uuid())
+  to              String
+  from            String
+  body            String   @db.Text
+  callId          String?
+  customerId      String?
+  direction       String   // inbound, outbound
+  status          String   // queued, sent, delivered, failed
+  messageSid      String?  @unique
+  companyId       String
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  failedReason    String?
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([to])
+  @@index([callId])
+  @@map("sms_messages")
+}
+
+// ============ EMAIL INTEGRATION ============
+
+model EmailMessage {
+  id              String   @id @default(uuid())
+  to              String
+  from            String
+  subject         String
+  body            String   @db.Text
+  callId          String?
+  customerId      String?
+  type            String   // transcript, summary, recording, notification
+  status          String   // queued, sent, delivered, failed, bounced
+  messageId       String?  @unique
+  companyId       String
+  sentAt          DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  failedReason    String?
+  attachments     Json?
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([to])
+  @@index([callId])
+  @@map("email_messages")
+}
+
+// ============ VOICEMAIL SYSTEM ============
+
+model Voicemail {
+  id              String   @id @default(uuid())
+  from            String
+  toAgentId       String?
+  duration        Int
+  recordingUrl    String
+  transcription   String?  @db.Text
+  status          String   // new, listened, archived, deleted
+  priority        String   @default("normal") // low, normal, high, urgent
+  companyId       String
+  listenedAt      DateTime?
+  listenedBy      String?
+  callbackStatus  String?  // pending, completed, not_needed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([toAgentId])
+  @@map("voicemails")
+}
+
+// ============ CALL QUEUE MANAGEMENT ============
+
+model CallQueue {
+  id              String   @id @default(uuid())
+  name            String
+  companyId       String
+  maxSize         Int      @default(100)
+  strategy        String   @default("fifo") // fifo, priority, skills_based
+  holdMusic       String?
+  announcements   Json?    // Periodic announcements
+  timeoutSeconds  Int      @default(300)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entries         QueueEntry[]
+
+  @@index([companyId, active])
+  @@map("call_queues")
+}
+
+model QueueEntry {
+  id              String   @id @default(uuid())
+  queueId         String
+  callSid         String   @unique
+  priority        Int      @default(5) // 1-10, higher = more urgent
+  estimatedWait   Int?     // seconds
+  position        Int?
+  customerId      String?
+  requiredSkills  String[] @default([])
+  status          String   // waiting, in_progress, completed, abandoned, timeout
+  enteredAt       DateTime @default(now())
+  assignedAt      DateTime?
+  completedAt     DateTime?
+  abandonedAt     DateTime?
+
+  queue           CallQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([queueId, status])
+  @@index([callSid])
+  @@map("queue_entries")
+}
+
+// ============ CUSTOMER CRM ============
+
+model Customer {
+  id              String   @id @default(uuid())
+  phoneNumber     String
+  email           String?
+  firstName       String?
+  lastName        String?
+  companyId       String
+  segment         String?  // vip, standard, new
+  tags            String[] @default([])
+  customFields    Json?
+  totalCalls      Int      @default(0)
+  lastCallAt      DateTime?
+  lifetimeValue   Float?
+  sentiment       String?  // positive, neutral, negative
+  preferredLanguage String @default("en")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  notes           CustomerNote[]
+  smsMessages     SMSMessage[]
+  emailMessages   EmailMessage[]
+  queueEntries    QueueEntry[]
+  surveys         SurveyResponse[]
+  whatsappMessages WhatsAppMessage[]
+
+  @@unique([phoneNumber, companyId])
+  @@index([companyId])
+  @@index([email])
+  @@map("customers")
+}
+
+model CustomerNote {
+  id              String   @id @default(uuid())
+  customerId      String
+  callId          String?
+  content         String   @db.Text
+  type            String   @default("general") // general, complaint, feedback, important
+  createdBy       String   // userId or agentId
+  visibility      String   @default("internal") // internal, shared
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([callId])
+  @@map("customer_notes")
+}
+
+// ============ CALL DISPOSITION ============
+
+model CallDisposition {
+  id              String   @id @default(uuid())
+  callId          String   @unique
+  code            String   // resolved, callback, escalated, no_answer, etc
+  subcategory     String?
+  notes           String?  @db.Text
+  followUpRequired Boolean @default(false)
+  followUpDate    DateTime?
+  createdBy       String
+  createdAt       DateTime @default(now())
+
+  @@index([code])
+  @@index([followUpRequired, followUpDate])
+  @@map("call_dispositions")
+}
+
+// ============ SENTIMENT ANALYSIS ============
+
+model SentimentLog {
+  id              String   @id @default(uuid())
+  callId          String
+  timestamp       Float    // Seconds from call start
+  speaker         String   // ai, user
+  sentiment       String   // positive, neutral, negative
+  score           Float    // -1.0 to 1.0
+  emotion         String?  // happy, angry, frustrated, sad, neutral
+  confidence      Float?
+  text            String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  @@index([callId])
+  @@index([sentiment])
+  @@map("sentiment_logs")
+}
+
+// ============ LIVE MONITORING (WHISPER/BARGE) ============
+
+model MonitoringSession {
+  id              String   @id @default(uuid())
+  callSid         String
+  supervisorId    String
+  mode            String   // listen, whisper, barge
+  startedAt       DateTime @default(now())
+  endedAt         DateTime?
+  duration        Int?
+
+  supervisor      HumanAgent @relation(fields: [supervisorId], references: [id])
+
+  @@index([callSid])
+  @@index([supervisorId])
+  @@map("monitoring_sessions")
+}
+
+// ============ WHATSAPP INTEGRATION ============
+
+model WhatsAppMessage {
+  id              String   @id @default(uuid())
+  messageId       String   @unique
+  from            String
+  to              String
+  body            String?  @db.Text
+  mediaUrl        String?
+  mediaType       String?
+  direction       String   // inbound, outbound
+  status          String   // sent, delivered, read, failed
+  customerId      String?
+  companyId       String
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([from])
+  @@index([to])
+  @@map("whatsapp_messages")
+}
+
+// ============ POST-CALL SURVEY ============
+
+model Survey {
+  id              String   @id @default(uuid())
+  companyId       String
+  name            String
+  questions       Json     // [{type: "rating", question: "Rate your experience", scale: 5}]
+  active          Boolean  @default(true)
+  triggerType     String   @default("all_calls") // all_calls, successful_only, escalated_only
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  responses       SurveyResponse[]
+
+  @@index([companyId, active])
+  @@map("surveys")
+}
+
+model SurveyResponse {
+  id              String   @id @default(uuid())
+  surveyId        String
+  callId          String
+  customerId      String?
+  answers         Json     // [{questionId: "q1", answer: 5, text: "Great service"}]
+  nps             Int?     // Net Promoter Score (0-10)
+  csat            Int?     // Customer Satisfaction (1-5)
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  survey          Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([surveyId])
+  @@index([callId])
+  @@map("survey_responses")
+}
+
+// ============ NOTIFICATION SYSTEM ============
+
+model Notification {
+  id              String   @id @default(uuid())
+  companyId       String
+  type            String   // escalation, alert, system, billing
+  title           String
+  message         String   @db.Text
+  priority        String   @default("normal") // low, normal, high, urgent
+  read            Boolean  @default(false)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, read, createdAt])
+  @@map("notifications")
+}
+
+// ============ BILLING & PACKAGES ============
+
+model Package {
+  id              String   @id @default(uuid())
+  companyId       String
+  name            String   // "50 Hours for $500"
+  type            String   // minutes, concurrent_agents, combined
+  
+  // Pricing for minutes/hours
+  minutesIncluded Int      @default(0) // e.g., 3000 minutes (50 hours)
+  pricePerMinute  Float?   // Optional: price if they go over
+  
+  // Pricing for concurrent agents
+  concurrentAgentsIncluded Int @default(1)
+  pricePerAgent   Float    @default(0) // e.g., $100/month per agent
+  
+  // Package pricing
+  totalPrice      Float    // e.g., $500
+  billingCycle    String   @default("monthly") // one_time, monthly, yearly
+  
+  // Usage tracking
+  minutesUsed     Int      @default(0)
+  minutesRemaining Int     @default(0)
+  
+  // Status
+  status          String   @default("active") // active, used, expired
+  purchasedAt     DateTime @default(now())
+  expiresAt       DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  usageLogs       UsageLog[]
+
+  @@index([companyId, status])
+  @@map("packages")
+}
+
+model UsageLog {
+  id              String   @id @default(uuid())
+  companyId       String
+  packageId       String?
+  callId          String?
+  
+  // Usage details
+  type            String   // call_minutes, concurrent_agent, sms, whatsapp, api_call
+  quantity        Float    // minutes used, or 1 for agent/sms
+  cost            Float    @default(0) // calculated cost
+  
+  // Metadata
+  description     String?
+  metadata        Json?
+  
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  package         Package? @relation(fields: [packageId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([packageId])
+  @@map("usage_logs")
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  companyId       String
+  invoiceNumber   String   @unique
+  
+  // Billing period
+  periodStart     DateTime
+  periodEnd       DateTime
+  
+  // Amounts
+  subtotal        Float
+  tax             Float    @default(0)
+  total           Float
+  
+  // Line items
+  items           Json     // [{description: "50h package", amount: 500}, {description: "Extra agents", amount: 200}]
+  
+  // Status
+  status          String   @default("pending") // pending, paid, overdue, cancelled
+  paidAt          DateTime?
+  paymentMethod   String?  // credit_card, bank_transfer, etc
+  
+  // URLs
+  pdfUrl          String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+
+  @@index([companyId, createdAt])
+  @@index([status])
+  @@map("invoices")
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  invoiceId       String
+  amount          Float
+  paymentMethod   String   // credit_card, bank_transfer, stripe, paypal
+  transactionId   String?
+  status          String   @default("pending") // pending, completed, failed, refunded
+  metadata        Json?
+  paidAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// ============ CAMPAIGNS (OUTBOUND CALLING) ============
+
+model Campaign {
+  id              String   @id @default(uuid())
+  companyId       String
+  name            String
+  agentId         String   // Which AI agent to use
+  
+  // Campaign settings
+  status          String   @default("draft") // draft, scheduled, active, paused, completed
+  type            String   @default("outbound") // outbound, survey, reminder
+  
+  // Scheduling
+  startDate       DateTime?
+  endDate         DateTime?
+  schedule        Json?    // {days: [1,2,3,4,5], startTime: "09:00", endTime: "17:00"}
+  
+  // Contact list
+  contactList     Json     // [{phone: "+1234567890", name: "John", data: {...}}]
+  totalContacts   Int      @default(0)
+  
+  // Progress
+  contactsReached Int      @default(0)
+  successfulCalls Int      @default(0)
+  failedCalls     Int      @default(0)
+  
+  // Call settings
+  maxRetries      Int      @default(3)
+  retryDelay      Int      @default(3600) // seconds between retries
+  
+  // Script
+  script          String?  @db.Text
+  callObjective   String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaignCalls   CampaignCall[]
+
+  @@index([companyId, status])
+  @@map("campaigns")
+}
+
+model CampaignCall {
+  id              String   @id @default(uuid())
+  campaignId      String
+  callSid         String?
+  phone           String
+  contactName     String?
+  contactData     Json?
+  
+  // Status
+  status          String   @default("pending") // pending, calling, completed, failed, busy, no_answer
+  attempts        Int      @default(0)
+  lastAttempt     DateTime?
+  
+  // Results
+  callDuration    Int?
+  callOutcome     String?  // success, no_answer, busy, failed, voicemail
+  callNotes       String?  @db.Text
+  
+  scheduledFor    DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@index([scheduledFor])
+  @@map("campaign_calls")
+}
+
+// ============ CALL MONITORING (SUPERVISOR) ============
+
+model CallMonitor {
+  id              String   @id @default(uuid())
+  callId          String
+  supervisorId    String
+  
+  action          String   // listen, whisper, barge
+  startedAt       DateTime @default(now())
+  endedAt         DateTime?
+  duration        Int?     // in seconds
+  
+  notes           String?  @db.Text
+  metadata        Json?
+  
+  createdAt       DateTime @default(now())
+
+  call            Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  supervisor      User     @relation(fields: [supervisorId], references: [id])
+
+  @@index([callId])
+  @@index([supervisorId, createdAt])
+  @@map("call_monitors")
+}
+
+// ============ AUDIT LOG ============
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  userEmail   String
+  userRole    String
+  companyId   String
+  action      String   // create, update, delete, login, logout, export, etc.
+  resource    String   // agent, call, user, billing, ivr, queue, campaign, etc.
+  resourceId  String?
+  details     Json?    // { before: {...}, after: {...}, description: "..." }
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([userId, createdAt])
+  @@index([resource, action])
+  @@map("audit_logs")
+}
+
+// ============ LEAD / CRM PIPELINE ============
+
+model Lead {
+  id              String   @id @default(uuid())
+  companyId       String
+  customerId      String?
+  
+  // Contact info
+  firstName       String?
+  lastName        String?
+  email           String?
+  phone           String?
+  company         String?  // lead's company
+  
+  // Pipeline
+  stage           String   @default("new") // new, contacted, qualified, proposal, negotiation, won, lost
+  source          String?  // inbound_call, outbound_campaign, whatsapp, sms, web_chat, manual, email, referral
+  score           Int      @default(0)  // 0-100 lead score
+  priority        String   @default("medium") // low, medium, high, urgent
+  
+  // Assignment
+  assignedTo      String?  // userId
+  
+  // Value
+  estimatedValue  Float?
+  currency        String   @default("USD")
+  
+  // Tracking
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  lostReason      String?
+  wonAt           DateTime?
+  lostAt          DateTime?
+  
+  tags            String[] @default([])
+  notes           String?  @db.Text
+  customFields    Json?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId, stage])
+  @@index([assignedTo, stage])
+  @@index([companyId, source])
+  @@map("leads")
+}
+
+// ============ DNC (DO NOT CALL) LIST ============
+
+model DNCEntry {
+  id              String   @id @default(uuid())
+  companyId       String
+  phoneNumber     String
+  reason          String?  // customer_request, regulatory, complaint, bounced
+  addedBy         String?  // userId
+  source          String?  // manual, api, import, customer_request
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@unique([companyId, phoneNumber])
+  @@index([companyId])
+  @@map("dnc_entries")
+}
+
+// ============ SCHEDULED CALLBACKS ============
+
+model ScheduledCallback {
+  id              String   @id @default(uuid())
+  companyId       String
+  customerId      String?
+  phoneNumber     String
+  agentId         String?  // preferred AI agent
+  scheduledFor    DateTime
+  timezone        String   @default("UTC")
+  reason          String?
+  notes           String?  @db.Text
+  status          String   @default("pending") // pending, completed, missed, cancelled
+  attempts        Int      @default(0)
+  lastAttemptAt   DateTime?
+  completedAt     DateTime?
+  callId          String?  // resulting call
+  createdBy       String?  // userId
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId, status, scheduledFor])
+  @@index([phoneNumber])
+  @@map("scheduled_callbacks")
+}
+
+// ============ CONVERSATION THREADS (OMNICHANNEL) ============
+
+model Conversation {
+  id              String   @id @default(uuid())
+  companyId       String
+  customerId      String?
+  channel         String   // voice, sms, whatsapp, email, web_chat
+  channelId       String?  // callId, messageId, etc.
+  subject         String?
+  status          String   @default("open") // open, pending, resolved, closed
+  assignedTo      String?  // userId or agentId
+  priority        String   @default("normal")
+  lastMessageAt   DateTime?
+  messageCount    Int      @default(0)
+  metadata        Json?
+  tags            String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([customerId])
+  @@index([channel, companyId])
+  @@map("conversations")
+}
+
+// ============ CANNED RESPONSES ============
+
+model CannedResponse {
+  id              String   @id @default(uuid())
+  companyId       String
+  title           String
+  body            String   @db.Text
+  category        String?  // greeting, closing, faq, escalation
+  channel         String   @default("all") // all, sms, whatsapp, email, chat
+  shortcut        String?  // e.g. "/hello"
+  language        String   @default("en")
+  usageCount      Int      @default(0)
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId, category])
+  @@map("canned_responses")
+}
