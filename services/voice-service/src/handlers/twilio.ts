@@ -3,9 +3,11 @@ import { logger } from '../utils/logger';
 import { CallSessionManager } from '../managers/callSession';
 import { publishEvent } from '../utils/rabbitmq';
 
-const IVR_SERVICE_URL = `http://localhost:${process.env.IVR_SERVICE_PORT || 3009}`;
-const QUEUE_SERVICE_URL = `http://localhost:${process.env.QUEUE_SERVICE_PORT || 3010}`;
-const TRANSFER_SERVICE_URL = `http://localhost:${process.env.TRANSFER_SERVICE_PORT || 3011}`;
+const IVR_SERVICE_URL = `http://ivr-service:${process.env.IVR_SERVICE_PORT || 3010}`;
+const QUEUE_SERVICE_URL = `http://queue-service:${process.env.QUEUE_SERVICE_PORT || 3018}`;
+const TRANSFER_SERVICE_URL = `http://transfer-service:${process.env.TRANSFER_SERVICE_PORT || 3009}`;
+const ADMIN_SERVICE_URL = `http://admin-service:${process.env.ADMIN_SERVICE_PORT || 3004}`;
+const AI_ENGINE_URL = `http://ai-engine-service:${process.env.AI_ENGINE_PORT || 8000}`;
 
 export interface CallValidation {
   allowed: boolean;
@@ -94,7 +96,7 @@ export class TwilioHandler {
       });
 
       // Trigger AI processing
-      await axios.post(`http://localhost:${process.env.AI_ENGINE_PORT}/process-call`, {
+      await axios.post(`${AI_ENGINE_URL}/process-call`, {
         callSid: data.callSid,
         agentId: data.agentConfig?.id
       });
@@ -203,7 +205,7 @@ export class TwilioHandler {
   private async getAgentConfig(phoneNumber: string): Promise<any> {
     try {
       const response = await axios.get(
-        `http://localhost:${process.env.ADMIN_SERVICE_PORT}/agent/by-phone/${phoneNumber}`
+        `${ADMIN_SERVICE_URL}/agent/by-phone/${phoneNumber}`
       );
       return response.data.data;
     } catch (error) {

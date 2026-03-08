@@ -7,7 +7,7 @@ import axios from 'axios';
 
 const redis = new Redis(process.env.REDIS_URL!);
 
-const BILLING_SERVICE_URL = `http://localhost:${process.env.BILLING_SERVICE_PORT || 3015}`;
+const BILLING_SERVICE_URL = `http://billing-service:${process.env.BILLING_SERVICE_PORT || 3015}`;
 
 interface CallSession {
   id: string;
