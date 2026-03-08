@@ -8,6 +8,7 @@ import { CallSessionManager } from './managers/callSession';
 import { initRabbitMQ } from './utils/rabbitmq';
 import webhookRoutes from './routes/webhook';
 import callRoutes from './routes/call';
+import { setupMediaStreamWebSocket } from './handlers/mediaStream';
 
 dotenv.config();
 
@@ -67,6 +68,9 @@ initRabbitMQ().then(() => {
 }).catch((error) => {
   logger.error('Failed to connect to RabbitMQ:', error);
 });
+
+// Setup Twilio Media Stream WebSocket handler
+setupMediaStreamWebSocket(httpServer, callSessionManager);
 
 // Start server
 httpServer.listen(PORT, () => {

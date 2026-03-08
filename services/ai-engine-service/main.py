@@ -135,7 +135,7 @@ async def get_agent_config(agent_id: str):
     """Fetch agent configuration from admin service"""
     import httpx
     
-    admin_service_url = f"http://localhost:{os.getenv('ADMIN_SERVICE_PORT', 3004)}"
+    admin_service_url = f"http://admin-service:{os.getenv('ADMIN_SERVICE_PORT', 3004)}"
     
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{admin_service_url}/agent/{agent_id}")
