@@ -95,11 +95,16 @@ export class TwilioHandler {
         direction: 'inbound'
       });
 
-      // Trigger AI processing
-      await axios.post(`${AI_ENGINE_URL}/process-call`, {
-        callSid: data.callSid,
-        agentId: data.agentConfig?.id
-      });
+      // Trigger AI processing (non-blocking — don't fail the call if AI engine is down)
+      try {
+        await axios.post(`${AI_ENGINE_URL}/process-call`, {
+          callSid: data.callSid,
+          agentId: data.agentConfig?.id
+        });
+      } catch (aiError) {
+        logger.warn('AI engine not available, call will connect without AI processing:', 
+          aiError instanceof Error ? aiError.message : 'Unknown error');
+      }
     } catch (error) {
       logger.error('Error handling incoming call:', error);
       throw error;
