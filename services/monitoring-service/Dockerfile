@@ -6,7 +6,7 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
-RUN npm install prisma && npx prisma generate
+RUN npm install prisma@5 && npx prisma generate
 RUN npm run build || true
 
 EXPOSE 3019
