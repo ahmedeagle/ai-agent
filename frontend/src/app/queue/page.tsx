@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import Sidebar from '@/components/dashboard/Sidebar';
 import {
   ListOrdered, Users, Clock, Phone, AlertTriangle, XCircle,
-  CheckCircle2, TrendingDown, PhoneCallback, ArrowRight, RefreshCw
+  CheckCircle2, TrendingDown, PhoneForwarded, ArrowRight, RefreshCw
 } from 'lucide-react';
 
 export default function QueuePage() {
@@ -238,7 +238,7 @@ export default function QueuePage() {
                     <div key={cb.id} className="px-6 py-4 flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="p-2 bg-blue-50 rounded-lg">
-                          <PhoneCallback className="h-5 w-5 text-blue-600" />
+                          <PhoneForwarded className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
                           <p className="text-sm font-medium text-gray-900">{cb.phone}</p>
@@ -257,7 +257,7 @@ export default function QueuePage() {
                 </div>
               ) : (
                 <div className="text-center py-16 text-gray-400">
-                  <PhoneCallback className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <PhoneForwarded className="h-12 w-12 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">No pending callbacks</p>
                 </div>
               )}

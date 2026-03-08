@@ -135,7 +135,7 @@ export default function AgentsPage() {
     const cleanedForm = {
       ...form,
       escalationRules: form.escalationRules.filter(r => r.condition.trim() !== ''),
-      phoneNumber: form.phoneNumber || undefined,
+      phoneNumber: form.phoneNumber || '',
     };
     if (selectedAgent) {
       updateMutation.mutate(cleanedForm);
