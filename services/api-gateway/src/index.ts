@@ -35,121 +35,121 @@ app.use('/api/health', healthRoutes);
 
 // Protected routes - require authentication
 app.use('/api/voice', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.VOICE_SERVICE_PORT || 3001}`,
+  target: `http://voice-service:${process.env.VOICE_SERVICE_PORT || 3001}`,
   changeOrigin: true,
   pathRewrite: { '^/api/voice': '' }
 }));
 
 app.use('/api/admin', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.ADMIN_SERVICE_PORT || 3004}`,
+  target: `http://admin-service:${process.env.ADMIN_SERVICE_PORT || 3004}`,
   changeOrigin: true,
   pathRewrite: { '^/api/admin': '' }
 }));
 
 app.use('/api/analytics', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.ANALYTICS_SERVICE_PORT || 8001}`,
+  target: `http://analytics-service:${process.env.ANALYTICS_SERVICE_PORT || 8001}`,
   changeOrigin: true,
   pathRewrite: { '^/api/analytics': '' }
 }));
 
 app.use('/api/qa', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.QA_SERVICE_PORT || 8002}`,
+  target: `http://qa-service:${process.env.QA_SERVICE_PORT || 8002}`,
   changeOrigin: true,
   pathRewrite: { '^/api/qa': '' }
 }));
 
 app.use('/api/knowledge-base', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.KNOWLEDGE_BASE_PORT || 3008}`,
+  target: `http://knowledge-base-service:${process.env.KNOWLEDGE_BASE_PORT || 3008}`,
   changeOrigin: true,
   pathRewrite: { '^/api/knowledge-base': '' }
 }));
 
 app.use('/api/transfer', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.TRANSFER_SERVICE_PORT || 3009}`,
+  target: `http://transfer-service:${process.env.TRANSFER_SERVICE_PORT || 3009}`,
   changeOrigin: true,
   pathRewrite: { '^/api/transfer': '' }
 }));
 
 app.use('/api/ivr', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.IVR_SERVICE_PORT || 3010}`,
+  target: `http://ivr-service:${process.env.IVR_SERVICE_PORT || 3010}`,
   changeOrigin: true,
   pathRewrite: { '^/api/ivr': '' }
 }));
 
 app.use('/api/sms', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.SMS_SERVICE_PORT || 3011}`,
+  target: `http://sms-service:${process.env.SMS_SERVICE_PORT || 3011}`,
   changeOrigin: true,
   pathRewrite: { '^/api/sms': '' }
 }));
 
 app.use('/api/sentiment', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.SENTIMENT_SERVICE_PORT || 3012}`,
+  target: `http://sentiment-service:${process.env.SENTIMENT_SERVICE_PORT || 3012}`,
   changeOrigin: true,
   pathRewrite: { '^/api/sentiment': '' }
 }));
 
 app.use('/api/email', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.EMAIL_SERVICE_PORT || 3013}`,
+  target: `http://email-service:${process.env.EMAIL_SERVICE_PORT || 3013}`,
   changeOrigin: true,
   pathRewrite: { '^/api/email': '' }
 }));
 
 app.use('/api/whatsapp', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.WHATSAPP_SERVICE_PORT || 3014}`,
+  target: `http://whatsapp-service:${process.env.WHATSAPP_SERVICE_PORT || 3014}`,
   changeOrigin: true,
   pathRewrite: { '^/api/whatsapp': '' }
 }));
 
 app.use('/api/billing', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.BILLING_SERVICE_PORT || 3015}`,
+  target: `http://billing-service:${process.env.BILLING_SERVICE_PORT || 3015}`,
   changeOrigin: true,
   pathRewrite: { '^/api/billing': '' }
 }));
 
 app.use('/api/campaigns', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.CAMPAIGNS_SERVICE_PORT || 3016}`,
+  target: `http://campaigns-service:${process.env.CAMPAIGNS_SERVICE_PORT || 3016}`,
   changeOrigin: true,
   pathRewrite: { '^/api/campaigns': '' }
 }));
 
 app.use('/api/voicemail', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.VOICEMAIL_SERVICE_PORT || 3017}`,
+  target: `http://voicemail-service:${process.env.VOICEMAIL_SERVICE_PORT || 3017}`,
   changeOrigin: true,
   pathRewrite: { '^/api/voicemail': '' }
 }));
 
 app.use('/api/queue', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.QUEUE_SERVICE_PORT || 3018}`,
+  target: `http://queue-service:${process.env.QUEUE_SERVICE_PORT || 3018}`,
   changeOrigin: true,
   pathRewrite: { '^/api/queue': '' }
 }));
 
 app.use('/api/monitor', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.MONITORING_SERVICE_PORT || 3019}`,
+  target: `http://monitoring-service:${process.env.MONITORING_SERVICE_PORT || 3019}`,
   changeOrigin: true,
   pathRewrite: { '^/api/monitor': '' }
 }));
 
 app.use('/api/surveys', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.SURVEY_SERVICE_PORT || 3020}`,
+  target: `http://survey-service:${process.env.SURVEY_SERVICE_PORT || 3020}`,
   changeOrigin: true,
   pathRewrite: { '^/api/surveys': '' }
 }));
 
 app.use('/api/recording', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.RECORDING_SERVICE_PORT || 3003}`,
+  target: `http://recording-service:${process.env.RECORDING_SERVICE_PORT || 3003}`,
   changeOrigin: true,
   pathRewrite: { '^/api/recording': '' }
 }));
 
 app.use('/api/tools', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.TOOL_EXECUTION_PORT || 3005}`,
+  target: `http://tool-execution-service:${process.env.TOOL_EXECUTION_PORT || 3005}`,
   changeOrigin: true,
   pathRewrite: { '^/api/tools': '' }
 }));
 
 app.use('/api/ai-engine', authMiddleware, rbacMiddleware, createProxyMiddleware({
-  target: `http://localhost:${process.env.AI_ENGINE_PORT || 8000}`,
+  target: `http://ai-engine-service:${process.env.AI_ENGINE_PORT || 8000}`,
   changeOrigin: true,
   pathRewrite: { '^/api/ai-engine': '' }
 }));
