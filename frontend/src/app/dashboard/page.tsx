@@ -29,14 +29,15 @@ export default function DashboardPage() {
   }, [router]);
 
   const { data: kpiData } = useQuery({
-    queryKey: ['kpi-summary'],
+    queryKey: ['kpi-summary', user?.companyId],
     queryFn: async () => {
       const response = await api.get('/analytics/kpi/summary', {
         params: { company_id: user?.companyId }
       });
       return response.data.data;
     },
-    enabled: !!user?.companyId
+    enabled: !!user?.companyId,
+    refetchInterval: 30000,
   });
 
   if (!user) {
