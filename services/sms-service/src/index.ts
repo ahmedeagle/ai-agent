@@ -10,10 +10,16 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.SMS_SERVICE_PORT || 3011;
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+// Lazy Twilio init - only create client when credentials exist
+function getTwilioClient() {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token || !sid.startsWith('AC')) {
+    console.warn('Twilio credentials not configured - SMS features disabled');
+    return null;
+  }
+  return twilio(sid, token);
+}
 
 // Get per-company Twilio client (falls back to system default)
 async function getCompanyTwilioClient(companyId: string) {
@@ -31,7 +37,7 @@ async function getCompanyTwilioClient(companyId: string) {
   }
   
   // Fall back to system default
-  return twilioClient;
+  return getTwilioClient();
 }
 
 app.use(express.json());

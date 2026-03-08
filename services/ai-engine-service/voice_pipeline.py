@@ -1,14 +1,31 @@
 import asyncio
-from deepgram import Deepgram
 import os
 import httpx
+
+
+def _create_deepgram_client(api_key):
+    """Create Deepgram client, handling SDK v2 vs v3 differences."""
+    if not api_key:
+        return None
+    try:
+        # Try SDK v2 style
+        from deepgram import Deepgram
+        return Deepgram(api_key)
+    except Exception:
+        try:
+            # Try SDK v3 style
+            from deepgram import DeepgramClient
+            return DeepgramClient(api_key)
+        except Exception as e:
+            print(f"Deepgram client init failed: {e}")
+            return None
 
 
 class VoicePipeline:
     def __init__(self):
         self.deepgram_key = os.getenv("DEEPGRAM_API_KEY")
         self.elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
-        self.deepgram = Deepgram(self.deepgram_key) if self.deepgram_key else None
+        self.deepgram = _create_deepgram_client(self.deepgram_key)
     
     async def start_stream(self, call_sid: str, agent_config: dict):
         """Start voice processing stream for a call"""

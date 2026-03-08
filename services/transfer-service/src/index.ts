@@ -12,10 +12,17 @@ const PORT = process.env.TRANSFER_SERVICE_PORT || 3009;
 
 app.use(express.json());
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+// Lazy Twilio init - only create client when credentials exist
+function getTwilioClient() {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token || !sid.startsWith('AC')) {
+    console.warn('Twilio credentials not configured - transfer features disabled');
+    return null;
+  }
+  return twilio(sid, token);
+}
+const twilioClient = getTwilioClient();
 
 // ============ AGENT STATUS MANAGEMENT ============
 

@@ -4,10 +4,17 @@ import twilio from 'twilio';
 
 export default (sessionManager: CallSessionManager) => {
   const router = Router();
-  const client = twilio(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_AUTH_TOKEN!
-  );
+  // Lazy Twilio init - only create client when credentials exist
+  function getClient() {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    if (!sid || !token || !sid.startsWith('AC')) {
+      throw new Error('Twilio credentials not configured');
+    }
+    return twilio(sid, token);
+  }
+  let client: ReturnType<typeof twilio> | null = null;
+  try { client = getClient(); } catch(e) { console.warn('Twilio not configured - voice call features disabled'); }
 
   // Initiate outbound call
   router.post('/outbound', async (req, res) => {
