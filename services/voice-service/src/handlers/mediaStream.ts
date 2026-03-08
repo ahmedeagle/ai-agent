@@ -4,11 +4,27 @@ import { Server as HttpServer } from 'http';
 import { logger } from '../utils/logger';
 import { CallSessionManager } from '../managers/callSession';
 import axios from 'axios';
+import Redis from 'ioredis';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ADMIN_SERVICE_URL = `http://admin-service:${process.env.ADMIN_SERVICE_PORT || 3004}`;
+const KB_SERVICE_URL = `http://knowledge-base-service:${process.env.KNOWLEDGE_BASE_PORT || 3008}`;
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant answering phone calls. Be friendly, professional, and concise. Greet callers warmly and help them with their needs.';
+
+// Shared Redis client - avoids creating new connections per call
+let sharedRedis: Redis | null = null;
+function getRedisClient(): Redis {
+  if (!sharedRedis || sharedRedis.status === 'end') {
+    sharedRedis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => Math.min(times * 200, 2000),
+      lazyConnect: false
+    });
+    sharedRedis.on('error', (err) => logger.error('Shared Redis error:', err));
+  }
+  return sharedRedis;
+}
 
 interface StreamSession {
   callSid: string;
@@ -122,15 +138,33 @@ async function loadAgentConfig(session: StreamSession) {
     if (callData?.agentId) {
       session.agentId = callData.agentId;
       
+      let companyId = callData.companyId || 'default-company';
+
       try {
         const res = await axios.get(`${ADMIN_SERVICE_URL}/agent/${callData.agentId}`);
         const agent = res.data?.data;
         if (agent?.systemPrompt) {
           session.systemPrompt = agent.systemPrompt;
+          companyId = agent.companyId || companyId;
           logger.info(`Loaded agent config: ${agent.name}`);
         }
       } catch (e) {
         logger.warn('Could not fetch agent config, using default prompt');
+      }
+
+      // Fetch knowledge base context and inject into system prompt (RAG)
+      try {
+        const kbRes = await axios.get(`${KB_SERVICE_URL}/context/${companyId}`, {
+          params: { limit: 15 },
+          timeout: 5000
+        });
+        const kbContext = kbRes.data?.context;
+        if (kbContext && kbContext.length > 0) {
+          session.systemPrompt += `\n\n--- KNOWLEDGE BASE ---\nUse the following knowledge to answer questions accurately:\n\n${kbContext}\n--- END KNOWLEDGE BASE ---`;
+          logger.info(`Injected KB context (${kbRes.data?.items || 0} items) into system prompt`);
+        }
+      } catch (e) {
+        logger.warn('Could not fetch KB context (non-blocking)');
       }
     } else {
       logger.warn('No agent ID in call session, using default prompt');
@@ -351,10 +385,8 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
 
 async function getCallSession(callSid: string): Promise<any> {
   try {
-    const Redis = (await import('ioredis')).default;
-    const redis = new Redis(process.env.REDIS_URL!);
+    const redis = getRedisClient();
     const data = await redis.get(`call:${callSid}`);
-    await redis.quit();
     return data ? JSON.parse(data) : null;
   } catch (error) {
     logger.error('Error fetching call session from Redis:', error);

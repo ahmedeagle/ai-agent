@@ -1,10 +1,11 @@
 import httpx
+import os
 from typing import Dict, Any
 
 
 class ToolExecutor:
     def __init__(self):
-        self.tool_service_url = f"http://localhost:3002"  # Tool Execution Service
+        self.tool_service_url = os.getenv("TOOL_SERVICE_URL", "http://tool-execution-service:3002")
     
     async def execute(
         self,

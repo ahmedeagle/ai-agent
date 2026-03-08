@@ -12,7 +12,7 @@ const PORT = process.env.CAMPAIGNS_SERVICE_PORT || 3016;
 app.use(express.json());
 
 // Voice service URL
-const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://localhost:3003';
+const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://voice-service:3001';
 
 // ============ CAMPAIGN MANAGEMENT ============
 

@@ -13,6 +13,8 @@ import leadRoutes from './routes/lead';
 import dncRoutes from './routes/dnc';
 import callbackRoutes from './routes/callback';
 import notificationRoutes from './routes/notification';
+import knowledgeBaseRoutes from './routes/knowledgeBase';
+import { auditMiddleware } from './middleware/audit';
 
 dotenv.config();
 
@@ -20,6 +22,9 @@ const app = express();
 const PORT = process.env.ADMIN_SERVICE_PORT || 3004;
 
 app.use(express.json());
+
+// Automatic audit logging for all mutating operations
+app.use(auditMiddleware);
 
 app.use('/agent', agentRoutes);
 app.use('/call', callRoutes);
@@ -35,6 +40,7 @@ app.use('/lead', leadRoutes);
 app.use('/dnc', dncRoutes);
 app.use('/callback', callbackRoutes);
 app.use('/notification', notificationRoutes);
+app.use('/kb', knowledgeBaseRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ success: true, service: 'admin-service', status: 'healthy' });

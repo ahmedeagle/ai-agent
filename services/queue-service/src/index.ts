@@ -11,79 +11,184 @@ const PORT = process.env.QUEUE_SERVICE_PORT || 3018;
 
 app.use(express.json());
 
-// Voice service URL
-const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://localhost:3003';
+// Voice service URL - use Docker service name
+const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://voice-service:3001';
 
-// In-memory queue tracking
-interface QueueEntry {
-  callId: string;
+// In-memory queue tracking (backed by DB for persistence)
+interface MemQueueEntry {
+  callSid: string;
   companyId: string;
-  phone: string;
+  queueId: string;
   priority: number;
-  skills?: string[];
+  requiredSkills: string[];
   joinedAt: Date;
   estimatedWaitTime: number;
 }
 
-const queues: Map<string, QueueEntry[]> = new Map(); // companyId -> queue entries
+const queues: Map<string, MemQueueEntry[]> = new Map(); // companyId -> queue entries
+
+// Cache of default queues per company
+const defaultQueueIds: Map<string, string> = new Map();
+
+// Get or create default queue for a company
+async function getOrCreateDefaultQueue(companyId: string): Promise<string> {
+  const cached = defaultQueueIds.get(companyId);
+  if (cached) return cached;
+
+  let queue = await prisma.callQueue.findFirst({
+    where: { companyId, active: true },
+    orderBy: { createdAt: 'asc' }
+  });
+
+  if (!queue) {
+    queue = await prisma.callQueue.create({
+      data: {
+        name: 'Default Queue',
+        companyId,
+        maxSize: 100,
+        strategy: 'priority',
+        timeoutSeconds: 300,
+        active: true
+      }
+    });
+  }
+
+  defaultQueueIds.set(companyId, queue.id);
+  return queue.id;
+}
+
+// Recover in-memory queues from DB on startup
+async function recoverQueuesFromDB() {
+  try {
+    const waitingEntries = await prisma.queueEntry.findMany({
+      where: { status: 'waiting' },
+      include: { queue: true },
+      orderBy: [{ priority: 'desc' }, { enteredAt: 'asc' }]
+    });
+
+    for (const entry of waitingEntries) {
+      const companyId = entry.queue.companyId;
+      const companyQueue = queues.get(companyId) || [];
+      companyQueue.push({
+        callSid: entry.callSid,
+        companyId,
+        queueId: entry.queueId,
+        priority: entry.priority,
+        requiredSkills: entry.requiredSkills || [],
+        joinedAt: entry.enteredAt,
+        estimatedWaitTime: entry.estimatedWait || 0
+      });
+      queues.set(companyId, companyQueue);
+    }
+
+    console.log(`Recovered ${waitingEntries.length} queue entries from DB`);
+  } catch (error) {
+    console.error('Failed to recover queues from DB:', error);
+  }
+}
 
 // ============ QUEUE MANAGEMENT ============
+
+// Create a new call queue
+app.post('/queue/create', async (req, res) => {
+  try {
+    const { name, companyId, maxSize = 100, strategy = 'priority', holdMusic, announcements, timeoutSeconds = 300 } = req.body;
+
+    const queue = await prisma.callQueue.create({
+      data: { name, companyId, maxSize, strategy, holdMusic, announcements, timeoutSeconds, active: true }
+    });
+
+    res.json({ success: true, data: queue });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// List queues for a company
+app.get('/queue/list/:companyId', async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const queueList = await prisma.callQueue.findMany({
+      where: { companyId },
+      include: { entries: { where: { status: 'waiting' } } },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    res.json({
+      success: true,
+      data: queueList.map(q => ({
+        ...q,
+        waitingCount: q.entries.length,
+        entries: undefined
+      }))
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Add call to queue
 app.post('/queue/add', async (req, res) => {
   try {
     const {
-      callId,
+      callSid,
+      callId, // backward compat alias
       companyId,
-      phone,
+      queueId,
       priority = 5,
-      skills = [],
-      metadata = {}
+      requiredSkills = [],
+      skills = [], // backward compat alias
+      customerId
     } = req.body;
 
+    const sid = callSid || callId;
+    if (!sid || !companyId) {
+      return res.status(400).json({ success: false, error: 'callSid and companyId are required' });
+    }
+
+    const resolvedQueueId = queueId || await getOrCreateDefaultQueue(companyId);
+    const resolvedSkills = requiredSkills.length > 0 ? requiredSkills : skills;
+
     // Create queue entry in DB
-    const queueEntry = await prisma.queue.create({
+    const queueEntry = await prisma.queueEntry.create({
       data: {
-        callId,
-        companyId,
-        phone,
+        queueId: resolvedQueueId,
+        callSid: sid,
         priority,
-        skills,
-        metadata,
+        requiredSkills: resolvedSkills,
         status: 'waiting',
-        position: 0 // Will be calculated
+        position: 0,
+        customerId: customerId || null,
+        estimatedWait: 0
       }
     });
 
     // Add to in-memory queue
     const companyQueue = queues.get(companyId) || [];
-    const entry: QueueEntry = {
-      callId,
+    const entry: MemQueueEntry = {
+      callSid: sid,
       companyId,
-      phone,
+      queueId: resolvedQueueId,
       priority,
-      skills,
+      requiredSkills: resolvedSkills,
       joinedAt: new Date(),
       estimatedWaitTime: calculateEstimatedWaitTime(companyQueue.length)
     };
-    
+
     companyQueue.push(entry);
-    
+
     // Sort by priority (higher priority first), then by join time
     companyQueue.sort((a, b) => {
-      if (b.priority !== a.priority) {
-        return b.priority - a.priority;
-      }
+      if (b.priority !== a.priority) return b.priority - a.priority;
       return a.joinedAt.getTime() - b.joinedAt.getTime();
     });
-    
+
     queues.set(companyId, companyQueue);
 
     // Update positions in DB
     await updateQueuePositions(companyId);
 
-    // Get caller's position
-    const position = companyQueue.findIndex(e => e.callId === callId) + 1;
+    const position = companyQueue.findIndex(e => e.callSid === sid) + 1;
 
     res.json({
       success: true,
@@ -95,45 +200,38 @@ app.post('/queue/add', async (req, res) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Get next call from queue (for agent assignment)
 app.post('/queue/next', async (req, res) => {
   try {
-    const {companyId, agentSkills = []} = req.body;
+    const { companyId, agentSkills = [] } = req.body;
 
     const companyQueue = queues.get(companyId) || [];
-    
+
     if (companyQueue.length === 0) {
-      return res.json({
-        success: true,
-        data: null,
-        message: 'Queue is empty'
-      });
+      return res.json({ success: true, data: null, message: 'Queue is empty' });
     }
 
     // Find best matching call based on skills
-    let selectedEntry: QueueEntry | null = null;
+    let selectedEntry: MemQueueEntry | null = null;
     let selectedIndex = -1;
 
     for (let i = 0; i < companyQueue.length; i++) {
       const entry = companyQueue[i];
-      
-      // Check if agent has required skills
-      if (entry.skills && entry.skills.length > 0) {
-        const hasRequiredSkills = entry.skills.every(skill => 
+
+      if (entry.requiredSkills && entry.requiredSkills.length > 0) {
+        const hasRequiredSkills = entry.requiredSkills.every(skill =>
           agentSkills.includes(skill)
         );
-        
         if (hasRequiredSkills) {
           selectedEntry = entry;
           selectedIndex = i;
           break;
         }
       } else {
-        // No specific skills required, take this call
         selectedEntry = entry;
         selectedIndex = i;
         break;
@@ -141,142 +239,149 @@ app.post('/queue/next', async (req, res) => {
     }
 
     if (!selectedEntry) {
-      return res.json({
-        success: true,
-        data: null,
-        message: 'No matching calls for agent skills'
-      });
+      return res.json({ success: true, data: null, message: 'No matching calls for agent skills' });
     }
 
     // Remove from queue
     companyQueue.splice(selectedIndex, 1);
     queues.set(companyId, companyQueue);
 
+    const waitTimeSec = Math.floor((Date.now() - selectedEntry.joinedAt.getTime()) / 1000);
+
     // Update DB
-    await prisma.queue.update({
-      where: {id: selectedEntry.callId},
+    await prisma.queueEntry.update({
+      where: { callSid: selectedEntry.callSid },
       data: {
-        status: 'connected',
+        status: 'in_progress',
         assignedAt: new Date(),
-        waitTime: Math.floor((Date.now() - selectedEntry.joinedAt.getTime()) / 1000)
+        estimatedWait: waitTimeSec
       }
     });
 
-    // Update positions for remaining calls
     await updateQueuePositions(companyId);
 
     res.json({
       success: true,
       data: {
-        callId: selectedEntry.callId,
-        phone: selectedEntry.phone,
-        waitTime: Math.floor((Date.now() - selectedEntry.joinedAt.getTime()) / 1000)
+        callSid: selectedEntry.callSid,
+        callId: selectedEntry.callSid, // backward compat
+        waitTime: waitTimeSec
       }
     });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Get caller's position in queue
-app.get('/queue/position/:callId', async (req, res) => {
+app.get('/queue/position/:callSid', async (req, res) => {
   try {
-    const {callId} = req.params;
+    const { callSid } = req.params;
 
-    const queueEntry = await prisma.queue.findFirst({
-      where: {
-        callId,
-        status: 'waiting'
-      }
+    const queueEntry = await prisma.queueEntry.findUnique({
+      where: { callSid },
+      include: { queue: true }
     });
 
-    if (!queueEntry) {
-      return res.json({
-        success: true,
-        data: null,
-        message: 'Call not in queue'
-      });
+    if (!queueEntry || queueEntry.status !== 'waiting') {
+      return res.json({ success: true, data: null, message: 'Call not in queue' });
     }
 
-    const companyQueue = queues.get(queueEntry.companyId) || [];
-    const position = companyQueue.findIndex(e => e.callId === callId) + 1;
+    const companyId = queueEntry.queue.companyId;
+    const companyQueue = queues.get(companyId) || [];
+    const position = companyQueue.findIndex(e => e.callSid === callSid) + 1;
     const estimatedWaitTime = calculateEstimatedWaitTime(position - 1);
 
     res.json({
       success: true,
-      data: {
-        position,
-        queueSize: companyQueue.length,
-        estimatedWaitTime
-      }
+      data: { position, queueSize: companyQueue.length, estimatedWaitTime }
     });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Remove call from queue
 app.post('/queue/remove', async (req, res) => {
   try {
-    const {callId, reason = 'caller_hangup'} = req.body;
+    const { callSid, callId, reason = 'caller_hangup' } = req.body;
+    const sid = callSid || callId;
 
-    const queueEntry = await prisma.queue.findFirst({
-      where: {callId}
+    const queueEntry = await prisma.queueEntry.findUnique({
+      where: { callSid: sid },
+      include: { queue: true }
     });
 
     if (!queueEntry) {
       throw new Error('Queue entry not found');
     }
 
+    const companyId = queueEntry.queue.companyId;
+
     // Remove from in-memory queue
-    const companyQueue = queues.get(queueEntry.companyId) || [];
-    const index = companyQueue.findIndex(e => e.callId === callId);
-    
+    const companyQueue = queues.get(companyId) || [];
+    const index = companyQueue.findIndex(e => e.callSid === sid);
+
     if (index !== -1) {
       companyQueue.splice(index, 1);
-      queues.set(queueEntry.companyId, companyQueue);
+      queues.set(companyId, companyQueue);
     }
 
     // Update DB
-    await prisma.queue.update({
-      where: {id: queueEntry.id},
+    await prisma.queueEntry.update({
+      where: { callSid: sid },
       data: {
         status: reason === 'timeout' ? 'timeout' : 'abandoned',
-        abandonedAt: new Date(),
-        waitTime: Math.floor((Date.now() - queueEntry.createdAt.getTime()) / 1000)
+        abandonedAt: new Date()
       }
     });
 
-    // Update positions
-    await updateQueuePositions(queueEntry.companyId);
+    await updateQueuePositions(companyId);
 
-    res.json({success: true, message: 'Call removed from queue'});
+    res.json({ success: true, message: 'Call removed from queue' });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Get queue status for company
 app.get('/queue/:companyId/status', async (req, res) => {
   try {
-    const {companyId} = req.params;
+    const { companyId } = req.params;
 
     const companyQueue = queues.get(companyId) || [];
-    
-    const waiting = await prisma.queue.count({
-      where: {companyId, status: 'waiting'}
+
+    // Count waiting entries from DB for accuracy
+    const queueIds = await prisma.callQueue.findMany({
+      where: { companyId, active: true },
+      select: { id: true }
+    });
+    const qids = queueIds.map(q => q.id);
+
+    const waiting = await prisma.queueEntry.count({
+      where: { queueId: { in: qids }, status: 'waiting' }
     });
 
-    const avgWaitTime = await prisma.queue.aggregate({
+    // Calculate average wait from completed/abandoned entries
+    const completedEntries = await prisma.queueEntry.findMany({
       where: {
-        companyId,
-        status: {in: ['connected', 'abandoned']},
-        waitTime: {not: null}
+        queueId: { in: qids },
+        status: { in: ['completed', 'in_progress', 'abandoned'] },
+        assignedAt: { not: null }
       },
-      _avg: {
-        waitTime: true
-      }
+      select: { enteredAt: true, assignedAt: true, completedAt: true, abandonedAt: true }
     });
+
+    let totalWait = 0;
+    let waitCount = 0;
+    for (const e of completedEntries) {
+      const endTime = e.assignedAt || e.completedAt || e.abandonedAt;
+      if (endTime) {
+        totalWait += (endTime.getTime() - e.enteredAt.getTime()) / 1000;
+        waitCount++;
+      }
+    }
+    const avgWaitTime = waitCount > 0 ? Math.round(totalWait / waitCount) : 0;
 
     const abandonRate = await calculateAbandonRate(companyId);
 
@@ -285,11 +390,11 @@ app.get('/queue/:companyId/status', async (req, res) => {
       data: {
         queueSize: companyQueue.length,
         waiting,
-        averageWaitTime: Math.round(avgWaitTime._avg.waitTime || 0),
+        averageWaitTime: avgWaitTime,
         abandonRate: Math.round(abandonRate * 100) / 100,
         entries: companyQueue.map((e, index) => ({
-          callId: e.callId,
-          phone: e.phone,
+          callSid: e.callSid,
+          callId: e.callSid,
           position: index + 1,
           priority: e.priority,
           waitTime: Math.floor((Date.now() - e.joinedAt.getTime()) / 1000),
@@ -298,100 +403,77 @@ app.get('/queue/:companyId/status', async (req, res) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Get queue history
 app.get('/queue/:companyId/history', async (req, res) => {
   try {
-    const {companyId} = req.params;
-    const {limit = 100, offset = 0, status} = req.query;
+    const { companyId } = req.params;
+    const { limit = '100', offset = '0', status } = req.query;
 
-    const where: any = {companyId};
-    if (status) {
-      where.status = status;
-    }
+    const queueIds = await prisma.callQueue.findMany({
+      where: { companyId },
+      select: { id: true }
+    });
+    const qids = queueIds.map(q => q.id);
 
-    const history = await prisma.queue.findMany({
+    const where: any = { queueId: { in: qids } };
+    if (status) where.status = status as string;
+
+    const history = await prisma.queueEntry.findMany({
       where,
-      orderBy: {createdAt: 'desc'},
+      orderBy: { enteredAt: 'desc' },
       take: parseInt(limit as string),
       skip: parseInt(offset as string)
     });
 
-    res.json({success: true, data: history});
+    res.json({ success: true, data: history });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ============ CALLBACK OFFERS ============
+// ============ CALLBACK OFFERS (simplified - status-based) ============
 
-// Offer callback to caller
 app.post('/queue/callback/offer', async (req, res) => {
   try {
-    const {callId, estimatedCallbackTime} = req.body;
+    const { callSid, callId } = req.body;
+    const sid = callSid || callId;
 
-    const queueEntry = await prisma.queue.update({
-      where: {id: callId},
-      data: {
-        callbackOffered: true,
-        estimatedCallbackTime: estimatedCallbackTime ? new Date(estimatedCallbackTime) : null
-      }
+    // Mark as completed (callback offered = caller leaves queue)
+    const entry = await prisma.queueEntry.update({
+      where: { callSid: sid },
+      data: { status: 'completed', completedAt: new Date() }
     });
 
-    res.json({success: true, data: queueEntry});
+    res.json({ success: true, data: entry });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Accept callback
-app.post('/queue/callback/accept', async (req, res) => {
-  try {
-    const {callId} = req.body;
-
-    const queueEntry = await prisma.queue.update({
-      where: {id: callId},
-      data: {
-        callbackAccepted: true,
-        status: 'callback_scheduled'
-      }
-    });
-
-    // Remove from active queue
-    const companyQueue = queues.get(queueEntry.companyId) || [];
-    const index = companyQueue.findIndex(e => e.callId === callId);
-    
-    if (index !== -1) {
-      companyQueue.splice(index, 1);
-      queues.set(queueEntry.companyId, companyQueue);
-    }
-
-    res.json({success: true, data: queueEntry});
-  } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
-  }
-});
-
-// Get pending callbacks
 app.get('/queue/:companyId/callbacks', async (req, res) => {
   try {
-    const {companyId} = req.params;
+    const { companyId } = req.params;
 
-    const callbacks = await prisma.queue.findMany({
-      where: {
-        companyId,
-        status: 'callback_scheduled',
-        callbackAccepted: true
-      },
-      orderBy: {createdAt: 'asc'}
+    const queueIds = await prisma.callQueue.findMany({
+      where: { companyId },
+      select: { id: true }
     });
 
-    res.json({success: true, data: callbacks});
+    const callbacks = await prisma.queueEntry.findMany({
+      where: {
+        queueId: { in: queueIds.map(q => q.id) },
+        status: 'completed'
+      },
+      orderBy: { enteredAt: 'asc' }
+    });
+
+    res.json({ success: true, data: callbacks });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -399,47 +481,58 @@ app.get('/queue/:companyId/callbacks', async (req, res) => {
 
 app.get('/queue/:companyId/stats', async (req, res) => {
   try {
-    const {companyId} = req.params;
-    const {startDate, endDate} = req.query;
+    const { companyId } = req.params;
+    const { startDate, endDate } = req.query;
 
-    const where: any = {companyId};
+    const queueIds = await prisma.callQueue.findMany({
+      where: { companyId },
+      select: { id: true }
+    });
+    const qids = queueIds.map(q => q.id);
+
+    const where: any = { queueId: { in: qids } };
     if (startDate || endDate) {
-      where.createdAt = {
-        gte: startDate ? new Date(startDate as string) : undefined,
-        lte: endDate ? new Date(endDate as string) : undefined
-      };
+      where.enteredAt = {};
+      if (startDate) where.enteredAt.gte = new Date(startDate as string);
+      if (endDate) where.enteredAt.lte = new Date(endDate as string);
     }
 
-    const total = await prisma.queue.count({where});
-    const connected = await prisma.queue.count({where: {...where, status: 'connected'}});
-    const abandoned = await prisma.queue.count({where: {...where, status: 'abandoned'}});
-    const timeout = await prisma.queue.count({where: {...where, status: 'timeout'}});
-    
-    const avgWaitTime = await prisma.queue.aggregate({
-      where: {
-        ...where,
-        waitTime: {not: null}
-      },
-      _avg: {
-        waitTime: true
-      }
+    const total = await prisma.queueEntry.count({ where });
+    const completed = await prisma.queueEntry.count({ where: { ...where, status: 'completed' } });
+    const inProgress = await prisma.queueEntry.count({ where: { ...where, status: 'in_progress' } });
+    const abandoned = await prisma.queueEntry.count({ where: { ...where, status: 'abandoned' } });
+    const timeout = await prisma.queueEntry.count({ where: { ...where, status: 'timeout' } });
+
+    // Calculate average wait time from entries that have assignedAt
+    const entriesWithWait = await prisma.queueEntry.findMany({
+      where: { ...where, assignedAt: { not: null } },
+      select: { enteredAt: true, assignedAt: true }
     });
 
-    const abandonRate = abandoned / (total || 1);
+    let totalWaitSec = 0;
+    for (const e of entriesWithWait) {
+      if (e.assignedAt) {
+        totalWaitSec += (e.assignedAt.getTime() - e.enteredAt.getTime()) / 1000;
+      }
+    }
+    const avgWait = entriesWithWait.length > 0 ? Math.round(totalWaitSec / entriesWithWait.length) : 0;
+
+    const abandonRate = total > 0 ? Math.round((abandoned / total) * 10000) / 100 : 0;
 
     res.json({
       success: true,
       data: {
         total,
-        connected,
+        completed,
+        inProgress,
         abandoned,
         timeout,
-        averageWaitTime: Math.round(avgWaitTime._avg.waitTime || 0),
-        abandonRate: Math.round(abandonRate * 100 * 100) / 100 // percentage with 2 decimals
+        averageWaitTime: avgWait,
+        abandonRate
       }
     });
   } catch (error: any) {
-    res.status(500).json({success: false, error: error.message});
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -452,24 +545,34 @@ function calculateEstimatedWaitTime(queuePosition: number): number {
 
 async function updateQueuePositions(companyId: string) {
   const companyQueue = queues.get(companyId) || [];
-  
+
   for (let i = 0; i < companyQueue.length; i++) {
-    await prisma.queue.updateMany({
-      where: {callId: companyQueue[i].callId},
-      data: {position: i + 1}
-    });
+    try {
+      await prisma.queueEntry.update({
+        where: { callSid: companyQueue[i].callSid },
+        data: { position: i + 1, estimatedWait: calculateEstimatedWaitTime(i) }
+      });
+    } catch (e) {
+      // Entry might have been removed concurrently
+    }
   }
 }
 
 async function calculateAbandonRate(companyId: string): Promise<number> {
-  const total = await prisma.queue.count({where: {companyId}});
-  const abandoned = await prisma.queue.count({
+  const queueIds = await prisma.callQueue.findMany({
+    where: { companyId },
+    select: { id: true }
+  });
+  const qids = queueIds.map(q => q.id);
+
+  const total = await prisma.queueEntry.count({ where: { queueId: { in: qids } } });
+  const abandoned = await prisma.queueEntry.count({
     where: {
-      companyId,
-      status: {in: ['abandoned', 'timeout']}
+      queueId: { in: qids },
+      status: { in: ['abandoned', 'timeout'] }
     }
   });
-  
+
   return total > 0 ? abandoned / total : 0;
 }
 
@@ -483,8 +586,17 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`📋 Queue Service running on port ${PORT}`);
+// Start server and recover state
+async function start() {
+  await recoverQueuesFromDB();
+  app.listen(PORT, () => {
+    console.log(`📋 Queue Service running on port ${PORT}`);
+  });
+}
+
+start().catch(err => {
+  console.error('Failed to start queue service:', err);
+  process.exit(1);
 });
 
 export default app;

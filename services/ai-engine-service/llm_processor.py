@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://localhost:3001")
+ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://admin-service:3004")
 
 
 class LLMProcessor:

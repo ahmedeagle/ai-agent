@@ -14,8 +14,8 @@ app.use(express.json());
 
 // External service URLs
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
-const SMS_SERVICE_URL = process.env.SMS_SERVICE_URL || 'http://localhost:3011';
-const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL || 'http://localhost:3013';
+const SMS_SERVICE_URL = process.env.SMS_SERVICE_URL || 'http://sms-service:3011';
+const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL || 'http://email-service:3013';
 
 // ============ VOICEMAIL MANAGEMENT ============
 

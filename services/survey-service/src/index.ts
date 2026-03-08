@@ -12,9 +12,9 @@ const PORT = process.env.SURVEY_SERVICE_PORT || 3020;
 app.use(express.json());
 
 // External service URLs
-const SMS_SERVICE_URL = process.env.SMS_SERVICE_URL || 'http://localhost:3011';
-const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL || 'http://localhost:3013';
-const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://localhost:3003';
+const SMS_SERVICE_URL = process.env.SMS_SERVICE_URL || 'http://sms-service:3011';
+const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL || 'http://email-service:3013';
+const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://voice-service:3001';
 
 // ============ SURVEY MANAGEMENT ============
 
@@ -427,7 +427,7 @@ app.get('/surveys/:companyId/analytics', async (req, res) => {
 
 async function sendSurvey(survey: any, call: any, channel: string) {
   try {
-    const surveyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/survey/${survey.id}?callId=${call.id}`;
+    const surveyUrl = `${process.env.FRONTEND_URL || 'http://frontend:3021'}/survey/${survey.id}?callId=${call.id}`;
 
     if (channel === 'sms') {
       const message = `Thank you for calling! Please rate your experience: ${surveyUrl}`;

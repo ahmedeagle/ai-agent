@@ -1032,3 +1032,49 @@ model CannedResponse {
   @@index([companyId, category])
   @@map("canned_responses")
 }
+
+// ============ KNOWLEDGE BASE ============
+
+model KBDocument {
+  id              String   @id @default(uuid())
+  companyId       String
+  name            String
+  type            String   // pdf, text, webpage, manual, csv
+  category        String?
+  content         String   @db.Text   // preview or short content
+  fullContent     String?  @db.Text   // full extracted text
+  chunks          Int      @default(0)
+  embeddings      Int      @default(0)
+  size            String?
+  wordCount       Int      @default(0)
+  url             String?  // if scraped from web
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("kb_documents")
+}
+
+model KBQAPair {
+  id              String   @id @default(uuid())
+  companyId       String
+  question        String   @db.Text
+  answer          String   @db.Text
+  category        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("kb_qa_pairs")
+}
+
+model KBTrainingLog {
+  id              String   @id @default(uuid())
+  companyId       String
+  type            String   // document_upload, qa_added, website_scraped, bulk_qa_import, manual_content, csv_import
+  details         Json?
+  createdAt       DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@map("kb_training_logs")
+}

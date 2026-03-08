@@ -13,7 +13,7 @@ const PORT = process.env.MONITORING_SERVICE_PORT || 3019;
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://localhost:3003';
+const VOICE_SERVICE_URL = process.env.VOICE_SERVICE_URL || 'http://voice-service:3001';
 
 // Active monitoring sessions
 interface MonitoringSession {

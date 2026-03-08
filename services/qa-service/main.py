@@ -24,7 +24,7 @@ app.add_middleware(
 qa_scorer = QAScorer()
 compliance_checker = ComplianceChecker()
 
-ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://localhost:3001")
+ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://admin-service:3004")
 
 
 # ============ MODELS ============

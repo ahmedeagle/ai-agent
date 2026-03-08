@@ -6,6 +6,7 @@ import os
 import re
 import json
 import requests
+import httpx
 from datetime import datetime
 from bs4 import BeautifulSoup
 import uvicorn
@@ -14,12 +15,13 @@ import io
 import csv
 from urllib.parse import urljoin, urlparse
 
-# For vector database - using simple in-memory for demo
-# In production, use Pinecone, Weaviate, or Chroma
-vector_store = {}
-qa_store = {}  # Store Q&A pairs separately
-website_store = {}  # Store scraped websites
-training_history = []  # Track all training activities
+ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://admin-service:3004")
+
+# In-memory caches (backed by PostgreSQL through admin-service)
+vector_store: Dict[str, list] = {}
+qa_store: Dict[str, list] = {}
+website_store: Dict[str, list] = {}
+training_history: list = []
 
 app = FastAPI(title="Knowledge Base Service")
 
@@ -111,13 +113,94 @@ def intelligent_chunk(text: str, chunk_size: int = 500) -> List[str]:
     return chunks
 
 def log_training_activity(companyId: str, activity_type: str, details: Dict[str, Any]):
-    """Log training activity for audit trail"""
-    training_history.append({
+    """Log training activity for audit trail - persist to DB"""
+    entry = {
         "companyId": companyId,
         "type": activity_type,
         "details": details,
         "timestamp": datetime.now().isoformat()
-    })
+    }
+    training_history.append(entry)
+    # Persist to admin-service
+    try:
+        requests.post(f"{ADMIN_SERVICE_URL}/kb/training-log", json={
+            "companyId": companyId,
+            "type": activity_type,
+            "details": details
+        }, timeout=5)
+    except Exception as e:
+        print(f"Warning: failed to persist training log: {e}")
+
+
+async def persist_document(doc: dict):
+    """Persist document to PostgreSQL via admin-service"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(f"{ADMIN_SERVICE_URL}/kb/document", json={
+                "companyId": doc.get("companyId"),
+                "name": doc.get("name"),
+                "type": doc.get("type", "unknown"),
+                "category": doc.get("category"),
+                "content": doc.get("content", "")[:2000],
+                "fullContent": doc.get("fullContent", ""),
+                "chunks": doc.get("chunks", 0),
+                "embeddings": doc.get("embeddings", 0),
+                "size": doc.get("size"),
+                "wordCount": doc.get("wordCount", 0),
+                "url": doc.get("url")
+            })
+    except Exception as e:
+        print(f"Warning: failed to persist document: {e}")
+
+
+async def persist_qa_pair(qa: dict):
+    """Persist Q&A pair to PostgreSQL via admin-service"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(f"{ADMIN_SERVICE_URL}/kb/qa", json={
+                "companyId": qa.get("companyId"),
+                "question": qa.get("question"),
+                "answer": qa.get("answer"),
+                "category": qa.get("category")
+            })
+    except Exception as e:
+        print(f"Warning: failed to persist Q&A pair: {e}")
+
+
+async def load_from_db():
+    """Load persisted data from admin-service on startup"""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Load documents
+            resp = await client.get(f"{ADMIN_SERVICE_URL}/kb/document")
+            if resp.status_code == 200:
+                docs = resp.json().get("data", [])
+                for doc in docs:
+                    cid = doc.get("companyId", "")
+                    if cid not in vector_store:
+                        vector_store[cid] = []
+                    vector_store[cid].append(doc)
+                print(f"Loaded {len(docs)} documents from DB")
+
+            # Load Q&A pairs
+            resp = await client.get(f"{ADMIN_SERVICE_URL}/kb/qa")
+            if resp.status_code == 200:
+                pairs = resp.json().get("data", [])
+                for qa in pairs:
+                    cid = qa.get("companyId", "")
+                    if cid not in qa_store:
+                        qa_store[cid] = []
+                    qa_store[cid].append(qa)
+                print(f"Loaded {len(pairs)} Q&A pairs from DB")
+
+            # Load training history
+            resp = await client.get(f"{ADMIN_SERVICE_URL}/kb/training-log")
+            if resp.status_code == 200:
+                logs = resp.json().get("data", [])
+                training_history.extend(logs)
+                print(f"Loaded {len(logs)} training log entries from DB")
+    except Exception as e:
+        print(f"Warning: could not load KB data from DB (admin-service may not be ready): {e}")
 
 @app.post("/upload")
 async def upload_document(
@@ -199,6 +282,9 @@ async def upload_document(
         if companyId not in vector_store:
             vector_store[companyId] = []
         vector_store[companyId].append(document)
+
+        # Persist to PostgreSQL
+        await persist_document(document)
         
         log_training_activity(companyId, "document_upload", {
             "filename": file.filename,
@@ -288,6 +374,9 @@ async def add_qa_pair(qa: QAPair):
         "question": qa.question[:100],
         "category": qa.category
     })
+
+    # Persist to PostgreSQL
+    await persist_qa_pair(qa.dict())
     
     return {
         "success": True,
@@ -514,6 +603,9 @@ async def scrape_website(scrape: WebsiteScrape, background_tasks: BackgroundTask
                 if scrape.companyId not in vector_store:
                     vector_store[scrape.companyId] = []
                 vector_store[scrape.companyId].append(doc)
+                # Persist to PostgreSQL
+                import asyncio
+                await persist_document(doc)
         
         log_training_activity(scrape.companyId, "website_scraped", {
             "url": base_url,
@@ -569,6 +661,9 @@ async def add_manual_content(content: ManualContent):
     if content.companyId not in vector_store:
         vector_store[content.companyId] = []
     vector_store[content.companyId].append(document)
+
+    # Persist to PostgreSQL
+    await persist_document(document)
     
     log_training_activity(content.companyId, "manual_content", {
         "title": content.title,
@@ -638,6 +733,80 @@ async def health_check():
             "trainingActivities": len(training_history)
         }
     }
+
+
+@app.post("/context")
+async def get_rag_context(query: SearchQuery):
+    """
+    Get RAG context for voice AI - returns concatenated relevant content
+    for injection into the AI's system prompt during a call.
+    """
+    results = []
+    company_id = query.companyId
+
+    # Search documents
+    for doc in vector_store.get(company_id, []):
+        full = doc.get("fullContent") or doc.get("content", "")
+        if query.query.lower() in full.lower():
+            results.append({
+                "source": f"doc:{doc.get('name', 'unknown')}",
+                "text": full[:500]
+            })
+
+    # Search Q&A pairs
+    for qa in qa_store.get(company_id, []):
+        q = qa.get("question", "")
+        a = qa.get("answer", "")
+        if query.query.lower() in q.lower() or query.query.lower() in a.lower():
+            results.append({
+                "source": "qa",
+                "text": f"Q: {q}\nA: {a}"
+            })
+
+    # Trim to topK
+    results = results[:query.topK]
+
+    # Build concatenated context string
+    context_text = "\n\n---\n\n".join(r["text"] for r in results) if results else ""
+
+    return {
+        "success": True,
+        "context": context_text,
+        "sources": len(results),
+        "data": results
+    }
+
+
+@app.get("/context/{company_id}")
+async def get_full_context(company_id: str, limit: int = 20):
+    """
+    Get all knowledge base context for a company (for initial prompt building).
+    Returns documents + Q&A pairs concatenated.
+    """
+    parts = []
+
+    # Add Q&A pairs
+    for qa in qa_store.get(company_id, [])[:limit]:
+        parts.append(f"Q: {qa.get('question', '')}\nA: {qa.get('answer', '')}")
+
+    # Add document snippets
+    for doc in vector_store.get(company_id, [])[:limit]:
+        content = doc.get("fullContent") or doc.get("content", "")
+        parts.append(f"[{doc.get('name', 'Document')}]: {content[:300]}")
+
+    context = "\n\n".join(parts) if parts else ""
+
+    return {
+        "success": True,
+        "context": context,
+        "items": len(parts)
+    }
+
+
+@app.on_event("startup")
+async def startup():
+    """Load persisted knowledge base data from DB on startup"""
+    await load_from_db()
 
 if __name__ == "__main__":
     uvicorn.run(
