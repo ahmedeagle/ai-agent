@@ -74,7 +74,7 @@ app.get('/campaigns/:companyId', async (req, res) => {
           select: {
             id: true,
             name: true,
-            voiceGender: true
+            voice: true
           }
         }
       }
@@ -94,8 +94,10 @@ app.get('/campaigns/:companyId/:campaignId', async (req, res) => {
     const campaign = await prisma.campaign.findUnique({
       where: {id: campaignId},
       include: {
-        agent: true,
-        calls: {
+        agent: {
+          select: { id: true, name: true, voice: true }
+        },
+        campaignCalls: {
           orderBy: {createdAt: 'desc'},
           take: 100
         }

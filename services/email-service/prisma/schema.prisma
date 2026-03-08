@@ -138,6 +138,7 @@ model Call {
   toolCalls       ToolCall[]
   qaResult        QAResult?
   callMonitors    CallMonitor[]
+  emailMessages   EmailMessage[]
 
   @@index([companyId, createdAt])
   @@index([status])
@@ -395,6 +396,7 @@ model EmailMessage {
 
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer        Customer? @relation(fields: [customerId], references: [id])
+  call            Call?     @relation(fields: [callId], references: [id], onDelete: SetNull)
 
   @@index([companyId, createdAt])
   @@index([to])

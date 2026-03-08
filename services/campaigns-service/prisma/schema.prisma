@@ -109,6 +109,7 @@ model Agent {
   company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   calls          Call[]
   qaRules        QARule[]
+  campaigns      Campaign[]
 
   @@map("agents")
 }
@@ -816,6 +817,7 @@ model Campaign {
   updatedAt       DateTime @updatedAt
 
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent           Agent    @relation(fields: [agentId], references: [id])
   campaignCalls   CampaignCall[]
 
   @@index([companyId, status])
