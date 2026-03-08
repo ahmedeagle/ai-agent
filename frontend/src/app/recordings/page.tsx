@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import Sidebar from '@/components/dashboard/Sidebar';
@@ -26,15 +26,19 @@ export default function RecordingsPage() {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const limit = 20;
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  useEffect(() => {
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    if (u.companyId) setCompanyId(u.companyId);
+  }, []);
 
   // Fetch calls that have recordings/transcripts
   const { data, isLoading } = useQuery({
-    queryKey: ['recordings', user.companyId, page, search, dateFilter, directionFilter, activeTab],
+    queryKey: ['recordings', companyId, page, search, dateFilter, directionFilter, activeTab],
     queryFn: async () => {
       const params: Record<string, any> = {
-        companyId: user.companyId,
+        companyId,
         page,
         limit,
         search,
@@ -60,7 +64,8 @@ export default function RecordingsPage() {
 
       const response = await api.get('/admin/call', { params });
       return response.data.data;
-    }
+    },
+    enabled: !!companyId
   });
 
   const calls = data?.calls || [];

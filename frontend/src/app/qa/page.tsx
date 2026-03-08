@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import Sidebar from '@/components/dashboard/Sidebar';
@@ -13,20 +13,25 @@ export default function QAPage() {
   const [selectedCall, setSelectedCall] = useState<any>(null);
   const [filter, setFilter] = useState('all');
   const queryClient = useQueryClient();
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  useEffect(() => {
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    if (u.companyId) setCompanyId(u.companyId);
+  }, []);
 
   const { data: qaResults, isLoading } = useQuery({
-    queryKey: ['qa-results', user.companyId, filter],
+    queryKey: ['qa-results', companyId, filter],
     queryFn: async () => {
       const response = await api.get('/qa/results', {
         params: {
-          companyId: user.companyId,
+          companyId,
           filter: filter !== 'all' ? filter : undefined
         }
       });
       return response.data.data;
-    }
+    },
+    enabled: !!companyId
   });
 
   const updateManualScoreMutation = useMutation({
