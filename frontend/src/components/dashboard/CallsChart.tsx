@@ -1,27 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { api } from '@/lib/api';
 
 export default function CallsChart() {
-  const [companyId, setCompanyId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.companyId) setCompanyId(user.companyId);
-  }, []);
-
   const { data } = useQuery({
-    queryKey: ['calls-analytics', companyId],
+    queryKey: ['calls-analytics'],
     queryFn: async () => {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!user.companyId) throw new Error('No company ID');
       const response = await api.get('/analytics/calls', {
-        params: { company_id: companyId, time_range: '7d' }
+        params: { company_id: user.companyId, time_range: '7d' }
       });
       return response.data.data;
     },
-    enabled: !!companyId
+    retry: 3,
+    retryDelay: 1000,
   });
 
   const chartData = data?.dataPoints || [];

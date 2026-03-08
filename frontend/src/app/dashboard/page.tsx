@@ -28,16 +28,19 @@ export default function DashboardPage() {
     }
   }, [router]);
 
-  const { data: kpiData } = useQuery({
-    queryKey: ['kpi-summary', user?.companyId],
+  const { data: kpiData, isLoading: kpiLoading, isError: kpiError } = useQuery({
+    queryKey: ['kpi-summary'],
     queryFn: async () => {
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!userData.companyId) throw new Error('No company ID');
       const response = await api.get('/analytics/kpi/summary', {
-        params: { company_id: user?.companyId }
+        params: { company_id: userData.companyId }
       });
       return response.data.data;
     },
-    enabled: !!user?.companyId,
     refetchInterval: 30000,
+    retry: 3,
+    retryDelay: 1000,
   });
 
   if (!user) {

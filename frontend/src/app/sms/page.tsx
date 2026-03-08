@@ -41,8 +41,11 @@ export default function SMSPage() {
 
   // Send SMS
   const sendMutation = useMutation({
-    mutationFn: async (data: { to: string; body: string }) =>
-      (await api.post('/sms/send', { ...data, companyId, type: 'manual' })).data,
+    mutationFn: async (data: { to: string; body: string }) => {
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!u.companyId) throw new Error('Not logged in – no company ID');
+      return (await api.post('/sms/send', { ...data, companyId: u.companyId, type: 'manual' })).data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sms-messages'] });
       setSendForm({ to: '', body: '' });
