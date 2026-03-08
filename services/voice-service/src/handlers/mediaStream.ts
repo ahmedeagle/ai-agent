@@ -199,6 +199,11 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
       try {
         const event = JSON.parse(data.toString());
 
+        // Log all event types for debugging
+        if (event.type !== 'response.audio.delta') {
+          logger.info(`OpenAI event: ${event.type}`);
+        }
+
         switch (event.type) {
           case 'session.created':
             logger.info('OpenAI Realtime session created');
@@ -224,12 +229,24 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
             }
             break;
 
+          case 'response.audio_transcript.delta':
+            // Partial transcript - ignore but good to know it's happening
+            break;
+
           case 'response.audio_transcript.done':
             logger.info(`AI said: ${event.transcript}`);
             session.conversationHistory.push({
               role: 'assistant',
               content: event.transcript
             });
+            break;
+
+          case 'response.text.delta':
+            logger.info(`AI text delta: ${event.delta}`);
+            break;
+
+          case 'response.text.done':
+            logger.info(`AI text response: ${event.text}`);
             break;
 
           case 'conversation.item.input_audio_transcription.completed':
@@ -241,11 +258,33 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
             break;
 
           case 'response.done':
-            logger.info(`Response complete for call: ${session.callSid}`);
+            // Log the full response output to debug
+            const output = event.response?.output;
+            logger.info(`Response done. Status: ${event.response?.status}. Output items: ${output?.length || 0}`);
+            if (output && output.length > 0) {
+              for (const item of output) {
+                logger.info(`  Output item type: ${item.type}, role: ${item.role}, content types: ${item.content?.map((c: any) => c.type).join(', ') || 'none'}`);
+              }
+            }
+            break;
+
+          case 'response.output_item.added':
+            logger.info(`Output item added: ${event.item?.type}`);
+            break;
+
+          case 'response.content_part.added':
+            logger.info(`Content part added: ${event.part?.type}`);
             break;
 
           case 'error':
             logger.error(`OpenAI Realtime error: ${JSON.stringify(event.error)}`);
+            break;
+
+          default:
+            // Log any unhandled events
+            if (!event.type?.startsWith('rate_limits')) {
+              logger.info(`Unhandled OpenAI event: ${event.type}`);
+            }
             break;
         }
       } catch (error) {
