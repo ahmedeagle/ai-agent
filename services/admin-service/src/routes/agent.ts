@@ -20,7 +20,11 @@ const agentSchema = z.object({
 router.post('/', async (req, res) => {
   try {
     const data = agentSchema.parse(req.body);
-    const { companyId } = req.query;
+    const companyId = req.body.companyId || req.query.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({ success: false, error: 'companyId is required' });
+    }
 
     const agent = await prisma.agent.create({
       data: {
