@@ -37,7 +37,16 @@ app.use('/api/auth', express.json(), authRoutes);
 app.use('/api/health', healthRoutes);
 
 // Fix: restream body for proxied routes after auth/rbac parse it
+// Also forward authenticated user info as headers for audit logging
 const fixRequestBody = (proxyReq: any, req: any) => {
+  // Forward user info from JWT auth to downstream services
+  if ((req as any).user) {
+    const u = (req as any).user;
+    proxyReq.setHeader('x-user-id', u.id || '');
+    proxyReq.setHeader('x-user-email', u.email || '');
+    proxyReq.setHeader('x-user-role', u.role || '');
+    proxyReq.setHeader('x-company-id', u.companyId || '');
+  }
   if (req.body && Object.keys(req.body).length > 0) {
     const bodyData = JSON.stringify(req.body);
     proxyReq.setHeader('Content-Type', 'application/json');
@@ -103,7 +112,7 @@ app.use('/api/ivr', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddl
 app.use('/api/sms', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://sms-service:${process.env.SMS_SERVICE_PORT || 3011}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/sms': '' },
+  pathRewrite: { '^/api/sms': '/sms' },
   onProxyReq: fixRequestBody
 }));
 
@@ -117,56 +126,56 @@ app.use('/api/sentiment', jsonParser, authMiddleware, rbacMiddleware, createProx
 app.use('/api/email', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://email-service:${process.env.EMAIL_SERVICE_PORT || 3013}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/email': '' },
+  pathRewrite: { '^/api/email': '/email' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/whatsapp', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://whatsapp-service:${process.env.WHATSAPP_SERVICE_PORT || 3014}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/whatsapp': '' },
+  pathRewrite: { '^/api/whatsapp': '/whatsapp' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/billing', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://billing-service:${process.env.BILLING_SERVICE_PORT || 3015}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/billing': '' },
+  pathRewrite: { '^/api/billing': '/billing' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/campaigns', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://campaigns-service:${process.env.CAMPAIGNS_SERVICE_PORT || 3016}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/campaigns': '' },
+  pathRewrite: { '^/api/campaigns': '/campaigns' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/voicemail', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://voicemail-service:${process.env.VOICEMAIL_SERVICE_PORT || 3017}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/voicemail': '' },
+  pathRewrite: { '^/api/voicemail': '/voicemail' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/queue', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://queue-service:${process.env.QUEUE_SERVICE_PORT || 3018}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/queue': '' },
+  pathRewrite: { '^/api/queue': '/queue' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/monitor', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://monitoring-service:${process.env.MONITORING_SERVICE_PORT || 3019}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/monitor': '' },
+  pathRewrite: { '^/api/monitor': '/monitor' },
   onProxyReq: fixRequestBody
 }));
 
 app.use('/api/surveys', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://survey-service:${process.env.SURVEY_SERVICE_PORT || 3020}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/surveys': '' },
+  pathRewrite: { '^/api/surveys': '/surveys' },
   onProxyReq: fixRequestBody
 }));
 

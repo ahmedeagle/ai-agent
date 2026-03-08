@@ -10,29 +10,92 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { TrendingUp, TrendingDown, Activity, Users, Phone, Clock } from 'lucide-react';
 
 export default function AnalyticsPage() {
-  const [user, setUser] = useState<any>({});
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
-    setUser(JSON.parse(localStorage.getItem('user') || '{}'));
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    if (u.companyId) setCompanyId(u.companyId);
   }, []);
 
-  const { data: kpis } = useQuery({
-    queryKey: ['kpis', user.companyId],
+  const { data: kpiRaw } = useQuery({
+    queryKey: ['kpis', companyId],
     queryFn: async () => {
-      const response = await api.get(`/analytics/kpi/${user.companyId}`);
+      const response = await api.get(`/analytics/kpi/${companyId}`);
       return response.data.data;
-    }
+    },
+    enabled: !!companyId
   });
 
-  const { data: trends } = useQuery({
-    queryKey: ['trends', user.companyId],
+  // Map KPI data from backend shape to frontend display shape
+  const kpis = kpiRaw ? {
+    aiPerformance: kpiRaw.aiPerformance?.score || 0,
+    successRate: kpiRaw.overview?.successRate || 0,
+    avgDuration: (kpiRaw.overview?.averageDuration || 0) / 60, // seconds to minutes
+    escalationRate: kpiRaw.overview?.escalationRate || 0,
+    completed: kpiRaw.overview?.completedCalls || 0,
+    failed: kpiRaw.overview?.failedCalls || 0,
+    escalated: kpiRaw.overview?.escalatedCalls || 0,
+    inProgress: 0,
+    totalCalls: kpiRaw.overview?.totalCalls || 0,
+    inboundCalls: kpiRaw.overview?.inboundCalls || 0,
+    outboundCalls: kpiRaw.overview?.outboundCalls || 0,
+  } : undefined;
+
+  const { data: callData } = useQuery({
+    queryKey: ['analytics-calls', companyId],
     queryFn: async () => {
-      const response = await api.get(`/analytics/trends/${user.companyId}`, {
-        params: { period: '30d' }
+      const response = await api.get('/analytics/calls', {
+        params: { company_id: companyId, time_range: '30d', group_by: 'day' }
       });
       return response.data.data;
-    }
+    },
+    enabled: !!companyId
   });
+
+  const { data: agentPerf } = useQuery({
+    queryKey: ['analytics-agents', companyId],
+    queryFn: async () => {
+      const response = await api.get('/analytics/agent-performance', {
+        params: { company_id: companyId }
+      });
+      return response.data.data;
+    },
+    enabled: !!companyId
+  });
+
+  const { data: toolData } = useQuery({
+    queryKey: ['analytics-tools', companyId],
+    queryFn: async () => {
+      const response = await api.get('/analytics/tools', {
+        params: { company_id: companyId }
+      });
+      return response.data.data;
+    },
+    enabled: !!companyId
+  });
+
+  // Build chart-compatible data from real API responses
+  const trends = {
+    callVolume: callData?.dataPoints || [],
+    successRate: (callData?.dataPoints || []).map((p: any) => ({
+      date: p.date,
+      rate: p.totalCalls > 0 ? Math.round((p.completedCalls / p.totalCalls) * 100) : 0
+    })),
+    agentPerformance: (agentPerf?.agents || []).map((a: any) => ({
+      agentName: a.agentName,
+      calls: a.totalCalls,
+      successRate: a.successRate
+    })),
+    toolUsage: (toolData?.tools || []).map((t: any) => ({
+      toolName: t.name,
+      count: t.count,
+      successRate: t.successRate
+    })),
+    peakHours: (callData?.dataPoints || []).map((p: any) => ({
+      hour: p.date,
+      calls: p.totalCalls
+    }))
+  };
 
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -109,8 +172,8 @@ export default function AnalyticsPage() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="total" stroke="#3B82F6" strokeWidth={2} name="Total Calls" />
-                <Line type="monotone" dataKey="completed" stroke="#10B981" strokeWidth={2} name="Completed" />
+                <Line type="monotone" dataKey="totalCalls" stroke="#3B82F6" strokeWidth={2} name="Total Calls" />
+                <Line type="monotone" dataKey="completedCalls" stroke="#10B981" strokeWidth={2} name="Completed" />
               </LineChart>
             </ResponsiveContainer>
           </div>

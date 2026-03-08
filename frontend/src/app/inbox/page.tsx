@@ -42,7 +42,7 @@ export default function OmnichannelPage() {
   // Fetch recent calls
   const { data: calls } = useQuery({
     queryKey: ['omni-calls', companyId],
-    queryFn: async () => (await api.get(`/admin/call/company/${companyId}?limit=30`)).data.data,
+    queryFn: async () => (await api.get(`/admin/call`, { params: { companyId, limit: 30 } })).data.data?.calls || [],
     enabled: !!companyId,
   });
 
