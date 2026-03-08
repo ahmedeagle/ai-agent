@@ -47,6 +47,11 @@ app.get('/health', (req, res) => {
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
   
+  socket.on('join-company', (companyId: string) => {
+    socket.join(`company-${companyId}`);
+    logger.info(`Socket ${socket.id} joined company room: company-${companyId}`);
+  });
+
   socket.on('join-call', (callId: string) => {
     socket.join(`call-${callId}`);
     logger.info(`Socket ${socket.id} joined call ${callId}`);

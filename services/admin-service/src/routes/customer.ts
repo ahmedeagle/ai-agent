@@ -60,7 +60,14 @@ router.get('/:id', async (req, res) => {
 // Create customer
 router.post('/', async (req, res) => {
   try {
-    const customer = await prisma.customer.create({ data: req.body });
+    // Ensure companyId is present — prefer body, fall back to gateway auth header
+    const companyId = req.body.companyId || req.headers['x-company-id'];
+    if (!companyId) {
+      return res.status(400).json({ success: false, error: 'companyId is required' });
+    }
+    const customer = await prisma.customer.create({
+      data: { ...req.body, companyId }
+    });
     res.status(201).json({ success: true, data: customer });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

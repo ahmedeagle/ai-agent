@@ -43,7 +43,11 @@ export default function ContactsPage() {
   });
 
   const createMut = useMutation({
-    mutationFn: async (d: any) => (await api.post('/admin/customer', { ...d, companyId })).data,
+    mutationFn: async (d: any) => {
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!u.companyId) throw new Error('Not logged in');
+      return (await api.post('/admin/customer', { ...d, companyId: u.companyId })).data;
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts'] }); setShowCreate(false); },
   });
 

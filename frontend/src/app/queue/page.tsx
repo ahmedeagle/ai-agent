@@ -26,7 +26,10 @@ export default function QueuePage() {
   // Live queue status
   const { data: queueStatus } = useQuery({
     queryKey: ['queue-status', companyId],
-    queryFn: async () => (await api.get(`/queue/${companyId}/status`)).data.data,
+    queryFn: async () => {
+      const cid = companyId || JSON.parse(localStorage.getItem('user') || '{}').companyId;
+      return (await api.get(`/queue/${cid}/status`)).data.data;
+    },
     enabled: !!companyId,
     refetchInterval: 3000,
   });
