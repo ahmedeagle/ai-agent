@@ -10,6 +10,13 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.SMS_SERVICE_PORT || 3011;
 
+// Helper: get the "from" phone number with env fallback
+function getFromNumber(company: any): string {
+  const from = company?.twilioPhoneNumber || process.env.TWILIO_PHONE_NUMBER;
+  if (!from) throw new Error('No Twilio phone number configured. Set it in Integrations or .env TWILIO_PHONE_NUMBER');
+  return from;
+}
+
 // Lazy Twilio init - only create client when credentials exist
 function getTwilioClient() {
   const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -67,7 +74,10 @@ app.post('/sms/send', async (req, res) => {
       throw new Error('Company not found');
     }
 
-    const from = company.twilioPhoneNumber;
+    const from = getFromNumber(company);
+    if (!from) {
+      throw new Error('No Twilio phone number configured. Set it in Integrations or .env TWILIO_PHONE_NUMBER');
+    }
 
     if (scheduledFor) {
       // Schedule for later
@@ -140,16 +150,17 @@ app.post('/sms/reminder', async (req, res) => {
     const body = `Reminder: You have an appointment on ${appointmentDate} at ${appointmentTime}. ${confirmLink ? `Confirm here: ${confirmLink}` : 'Reply YES to confirm.'}`;
 
     const companyTwilio = await getCompanyTwilioClient(customer.companyId);
+    const reminderFrom = getFromNumber(customer.company);
     const twilioMessage = await companyTwilio.messages.create({
       body,
       to: customer.phone,
-      from: customer.company.twilioPhoneNumber
+      from: reminderFrom
     });
 
     const message = await prisma.sMSMessage.create({
       data: {
         to: customer.phone,
-        from: customer.company.twilioPhoneNumber,
+        from: reminderFrom,
         body,
         companyId: customer.companyId,
         customerId: customer.id,
@@ -186,16 +197,17 @@ app.post('/sms/call-summary', async (req, res) => {
     const body = `Thank you for calling ${call.company.name}. Call duration: ${Math.round(call.duration / 60)} min. ${call.transcriptUrl ? `Transcript: ${call.transcriptUrl}` : ''} ${call.recordingUrl ? `Recording: ${call.recordingUrl}` : ''}`;
 
     const companyTwilio = await getCompanyTwilioClient(call.companyId);
+    const summaryFrom = getFromNumber(call.company);
     const twilioMessage = await companyTwilio.messages.create({
       body,
       to: call.phoneNumber,
-      from: call.company.twilioPhoneNumber
+      from: summaryFrom
     });
 
     const message = await prisma.sMSMessage.create({
       data: {
         to: call.phoneNumber,
-        from: call.company.twilioPhoneNumber,
+        from: summaryFrom,
         body,
         companyId: call.companyId,
         customerId: call.customerId,
@@ -229,16 +241,17 @@ app.post('/sms/otp', async (req, res) => {
     const body = `Your verification code is: ${code}. This code will expire in 10 minutes.`;
 
     const companyTwilio = await getCompanyTwilioClient(companyId);
+    const otpFrom = getFromNumber(company);
     const twilioMessage = await companyTwilio.messages.create({
       body,
       to,
-      from: company.twilioPhoneNumber
+      from: otpFrom
     });
 
     const message = await prisma.sMSMessage.create({
       data: {
         to,
-        from: company.twilioPhoneNumber,
+        from: otpFrom,
         body,
         companyId,
         type: 'otp',
@@ -261,10 +274,15 @@ app.post('/sms/webhook', async (req, res) => {
   try {
     const {MessageSid, From, To, Body} = req.body;
 
-    // Find company by phone number
-    const company = await prisma.company.findFirst({
+    // Find company by phone number (check DB first, then env fallback)
+    let company = await prisma.company.findFirst({
       where: {twilioPhoneNumber: To}
     });
+
+    // If not found by DB phone number, check if To matches system default
+    if (!company && To === process.env.TWILIO_PHONE_NUMBER) {
+      company = await prisma.company.findFirst();
+    }
 
     if (!company) {
       throw new Error('Company not found for number');
