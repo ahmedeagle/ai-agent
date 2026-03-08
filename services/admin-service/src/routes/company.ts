@@ -97,18 +97,27 @@ router.put('/:id/webhooks', async (req, res) => {
 router.post('/:id/test-integration', async (req, res) => {
   try {
     const { type, config } = req.body;
+    const companyId = req.params.id;
+
+    // Load company data to get saved credentials if config not provided
+    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
 
     let result: any = { success: false };
 
     switch (type) {
       case 'twilio': {
-        // Test Twilio credentials
         try {
+          const sid = config?.accountSid || company.twilioAccountSid;
+          const token = config?.authToken || company.twilioAuthToken;
+          if (!sid || !token) {
+            result = { success: false, message: 'Twilio credentials not configured. Save your Account SID and Auth Token first.' };
+            break;
+          }
           const response = await axios.get('https://api.twilio.com/2010-04-01/Accounts.json', {
-            auth: {
-              username: config.accountSid,
-              password: config.authToken
-            }
+            auth: { username: sid, password: token }
           });
           result = { success: true, message: 'Twilio connection successful' };
         } catch (e) {
@@ -118,9 +127,15 @@ router.post('/:id/test-integration', async (req, res) => {
       }
       case 'whatsapp': {
         try {
+          const phoneId = config?.phoneNumberId || company.whatsappPhoneId;
+          const token = config?.accessToken || company.whatsappToken;
+          if (!phoneId || !token) {
+            result = { success: false, message: 'WhatsApp credentials not configured. Save your Phone Number ID and Access Token first.' };
+            break;
+          }
           const response = await axios.get(
-            `https://graph.facebook.com/v18.0/${config.phoneNumberId}`,
-            { headers: { Authorization: `Bearer ${config.accessToken}` } }
+            `https://graph.facebook.com/v18.0/${phoneId}`,
+            { headers: { Authorization: `Bearer ${token}` } }
           );
           result = { success: true, message: 'WhatsApp connection successful' };
         } catch (e) {
@@ -130,8 +145,13 @@ router.post('/:id/test-integration', async (req, res) => {
       }
       case 'openai': {
         try {
+          const apiKey = config?.apiKey || company.openaiApiKey || process.env.OPENAI_API_KEY;
+          if (!apiKey) {
+            result = { success: false, message: 'OpenAI API key not configured.' };
+            break;
+          }
           const response = await axios.get('https://api.openai.com/v1/models', {
-            headers: { Authorization: `Bearer ${config.apiKey}` }
+            headers: { Authorization: `Bearer ${apiKey}` }
           });
           result = { success: true, message: 'OpenAI connection successful' };
         } catch (e) {
@@ -140,11 +160,14 @@ router.post('/:id/test-integration', async (req, res) => {
         break;
       }
       case 'smtp': {
-        // Basic SMTP test (verify we have the fields)
-        if (config.host && config.port && config.user && config.pass) {
+        const host = config?.host || company.smtpHost;
+        const port = config?.port || company.smtpPort;
+        const smtpUser = config?.user || company.smtpUser;
+        const pass = config?.pass || company.smtpPassword;
+        if (host && port && smtpUser && pass) {
           result = { success: true, message: 'SMTP config looks valid. Send a test email to verify.' };
         } else {
-          result = { success: false, message: 'Missing required SMTP fields' };
+          result = { success: false, message: 'Missing required SMTP fields. Save your SMTP configuration first.' };
         }
         break;
       }
