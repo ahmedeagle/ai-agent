@@ -8,6 +8,7 @@ import axios from 'axios';
 const redis = new Redis(process.env.REDIS_URL!);
 
 const BILLING_SERVICE_URL = `http://billing-service:${process.env.BILLING_SERVICE_PORT || 3015}`;
+const ADMIN_SERVICE_URL = `http://admin-service:${process.env.ADMIN_SERVICE_PORT || 3004}`;
 
 interface CallSession {
   id: string;
@@ -113,6 +114,22 @@ export class CallSessionManager {
     // Publish to RabbitMQ
     await publishEvent('call.started', session);
 
+    // Persist call to database via admin-service
+    try {
+      await axios.post(`${ADMIN_SERVICE_URL}/call`, {
+        callSid: session.callSid,
+        from: session.from,
+        to: session.to,
+        direction: session.direction,
+        status: session.status,
+        agentId: session.agentId,
+        companyId: session.companyId
+      });
+      logger.info(`Call persisted to database: ${session.callSid}`);
+    } catch (error) {
+      logger.warn('Failed to persist call to database:', error instanceof Error ? error.message : 'Unknown error');
+    }
+
     logger.info(`Call session created: ${session.id}`);
     return session;
   }
@@ -131,6 +148,17 @@ export class CallSessionManager {
 
     this.io.to(`company-${session.companyId}`).emit('call:updated', updated);
     await publishEvent('call.updated', updated);
+
+    // Persist status changes to database
+    if (updates.status) {
+      try {
+        await axios.put(`${ADMIN_SERVICE_URL}/call/by-sid/${callSid}`, {
+          status: updates.status
+        });
+      } catch (error) {
+        logger.warn('Failed to persist call status update:', error instanceof Error ? error.message : 'Unknown error');
+      }
+    }
   }
 
   async addTranscript(callSid: string, speaker: 'ai' | 'user', text: string): Promise<void> {
@@ -187,6 +215,28 @@ export class CallSessionManager {
     
     this.io.to(`company-${session.companyId}`).emit('call:ended', session);
     await publishEvent('call.completed', session);
+
+    // Persist completed call to database via admin-service
+    try {
+      const durationSeconds = Math.round(durationMs / 1000);
+      await axios.put(`${ADMIN_SERVICE_URL}/call/by-sid/${callSid}`, {
+        status: 'completed',
+        duration: durationSeconds,
+        endTime: session.endTime
+      });
+
+      // Save transcript if any entries exist
+      if (session.transcript && session.transcript.length > 0) {
+        await axios.post(`${ADMIN_SERVICE_URL}/call/by-sid/${callSid}/transcript`, {
+          entries: session.transcript
+        });
+        logger.info(`Transcript saved for call ${callSid} (${session.transcript.length} entries)`);
+      }
+
+      logger.info(`Call completion persisted to database: ${callSid}`);
+    } catch (error) {
+      logger.warn('Failed to persist call completion to database:', error instanceof Error ? error.message : 'Unknown error');
+    }
 
     logger.info(`Call session ended: ${session.id}`);
   }

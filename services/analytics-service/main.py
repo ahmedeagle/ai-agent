@@ -52,7 +52,71 @@ async def get_kpi_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/calls")
+@app.get("/kpi/{company_id}")
+async def get_kpi_by_company(
+    company_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Get KPIs for a specific company (alias route)"""
+    try:
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=30)).isoformat()
+        if not end_date:
+            end_date = datetime.now().isoformat()
+        
+        kpis = await kpi_calculator.calculate_kpis(
+            company_id=company_id,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        return {
+            "success": True,
+            "data": kpis
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/trends/{company_id}")
+async def get_trends_by_company(
+    company_id: str,
+    period: Optional[str] = "30d"
+):
+    """Get trending data for a specific company"""
+    try:
+        # Parse period to get days
+        days = 30
+        if period:
+            if period.endswith('d'):
+                days = int(period[:-1])
+            elif period.endswith('w'):
+                days = int(period[:-1]) * 7
+        
+        start_date = (datetime.now() - timedelta(days=days)).isoformat()
+        end_date = datetime.now().isoformat()
+        
+        kpis = await kpi_calculator.calculate_kpis(
+            company_id=company_id,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        # Build trends data from kpis
+        return {
+            "success": True,
+            "data": {
+                "period": period,
+                "calls": kpis.get("overview", {}),
+                "performance": kpis.get("aiPerformance", {})
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/calls")
 async def get_call_analytics(
     company_id: str,
     time_range: str = Query("7d", regex="^[0-9]+[hdwm]$"),
@@ -74,7 +138,7 @@ async def get_call_analytics(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/agent-performance")
+@app.get("/agent-performance")
 async def get_agent_performance(
     company_id: str,
     agent_id: Optional[str] = None
@@ -94,7 +158,7 @@ async def get_agent_performance(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/tools")
+@app.get("/tools")
 async def get_tool_usage(
     company_id: str,
     start_date: Optional[str] = None,
@@ -116,10 +180,10 @@ async def get_tool_usage(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/trends")
-async def get_trends(
+@app.get("/trends")
+async def get_trends_metric(
     company_id: str,
-    metric: str = Query(..., regex="^(calls|duration|success_rate|escalations)$")
+    metric: str = Query("calls", regex="^(calls|duration|success_rate|escalations)$")
 ):
     """Get trending data for a specific metric"""
     try:

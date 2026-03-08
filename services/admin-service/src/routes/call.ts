@@ -4,24 +4,121 @@ import { PrismaClient } from '@prisma/client';
 const router = Router();
 const prisma = new PrismaClient();
 
+// Create a new call record
+router.post('/', async (req, res) => {
+  try {
+    const { callSid, from, to, direction, status, agentId, companyId } = req.body;
+
+    const call = await prisma.call.create({
+      data: {
+        callSid,
+        from,
+        to,
+        direction: direction || 'inbound',
+        status: status || 'initiated',
+        agentId: agentId || null,
+        companyId,
+        startTime: new Date()
+      }
+    });
+
+    res.json({ success: true, data: call });
+  } catch (error: any) {
+    // If duplicate callSid, just return success
+    if (error?.code === 'P2002') {
+      const existing = await prisma.call.findUnique({ where: { callSid: req.body.callSid } });
+      return res.json({ success: true, data: existing });
+    }
+    console.error('Failed to create call:', error);
+    res.status(500).json({ success: false, error: 'Failed to create call' });
+  }
+});
+
+// Update call by callSid
+router.put('/by-sid/:callSid', async (req, res) => {
+  try {
+    const { callSid } = req.params;
+    const { status, duration, endTime, recordingUrl, escalated, escalationReason } = req.body;
+
+    const updateData: any = {};
+    if (status !== undefined) updateData.status = status;
+    if (duration !== undefined) updateData.duration = duration;
+    if (endTime !== undefined) updateData.endTime = new Date(endTime);
+    if (recordingUrl !== undefined) updateData.recordingUrl = recordingUrl;
+    if (escalated !== undefined) updateData.escalated = escalated;
+    if (escalationReason !== undefined) updateData.escalationReason = escalationReason;
+
+    const call = await prisma.call.update({
+      where: { callSid },
+      data: updateData
+    });
+
+    res.json({ success: true, data: call });
+  } catch (error) {
+    console.error('Failed to update call:', error);
+    res.status(500).json({ success: false, error: 'Failed to update call' });
+  }
+});
+
+// Save transcript for a call
+router.post('/by-sid/:callSid/transcript', async (req, res) => {
+  try {
+    const { callSid } = req.params;
+    const { entries } = req.body;
+
+    // Find the call by callSid
+    const call = await prisma.call.findUnique({ where: { callSid } });
+    if (!call) {
+      return res.status(404).json({ success: false, error: 'Call not found' });
+    }
+
+    // Upsert transcript
+    const transcript = await prisma.transcript.upsert({
+      where: { callId: call.id },
+      update: { entries },
+      create: { callId: call.id, entries }
+    });
+
+    res.json({ success: true, data: transcript });
+  } catch (error) {
+    console.error('Failed to save transcript:', error);
+    res.status(500).json({ success: false, error: 'Failed to save transcript' });
+  }
+});
+
 // Get call logs
 router.get('/', async (req, res) => {
   try {
-    const { companyId, page = 1, limit = 50 } = req.query;
+    const { companyId, page = 1, limit = 50, search, direction, status, hasRecording, hasTranscript, startDate } = req.query;
     
+    const where: any = { companyId: companyId as string };
+    
+    if (direction) where.direction = direction as string;
+    if (status) where.status = status as string;
+    if (hasRecording === 'true') where.recordingUrl = { not: null };
+    if (hasTranscript === 'true') where.transcript = { isNot: null };
+    if (startDate) where.createdAt = { gte: new Date(startDate as string) };
+    if (search) {
+      where.OR = [
+        { from: { contains: search as string } },
+        { to: { contains: search as string } },
+        { callSid: { contains: search as string } }
+      ];
+    }
+
     const calls = await prisma.call.findMany({
-      where: { companyId: companyId as string },
+      where,
       take: Number(limit),
       skip: (Number(page) - 1) * Number(limit),
       orderBy: { createdAt: 'desc' },
       include: {
-        agent: true
+        agent: true,
+        transcript: true,
+        recording: true
       }
     });
 
-    const total = await prisma.call.count({
-      where: { companyId: companyId as string }
-    });
+    const total = await prisma.call.count({ where });
 
     res.json({
       success: true,

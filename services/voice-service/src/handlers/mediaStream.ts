@@ -1,3 +1,4 @@
+
 import WebSocket from 'ws';
 import { Server as HttpServer } from 'http';
 import { logger } from '../utils/logger';
@@ -16,6 +17,7 @@ interface StreamSession {
   systemPrompt: string;
   conversationHistory: Array<{ role: string; content: string }>;
   openaiWs?: WebSocket;
+  twilioWs?: WebSocket;
   openaiReady: boolean;
   twilioReady: boolean;
   greetingSent: boolean;
@@ -48,14 +50,15 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
       conversationHistory: [],
       openaiReady: false,
       twilioReady: false,
-      greetingSent: false
+      greetingSent: false,
+      twilioWs: ws
     };
     activeSessions.set(callSid, session);
 
     // Load agent config first, then connect to OpenAI
     loadAgentConfig(session).then(() => {
       if (OPENAI_API_KEY) {
-        connectOpenAIRealtime(session, ws);
+        connectOpenAIRealtime(session, ws, sessionManager);
       } else {
         logger.warn('No OPENAI_API_KEY set - voice AI will not function');
       }
@@ -91,7 +94,7 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
 
           case 'stop':
             logger.info(`Media stream stopped for call: ${callSid}`);
-            cleanup(callSid);
+            cleanup(callSid, sessionManager);
             break;
         }
       } catch (error) {
@@ -101,7 +104,7 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
 
     ws.on('close', () => {
       logger.info(`Media stream WebSocket closed for call: ${callSid}`);
-      cleanup(callSid);
+      cleanup(callSid, sessionManager);
     });
 
     ws.on('error', (error) => {
@@ -164,7 +167,7 @@ function trySendGreeting(session: StreamSession) {
   }
 }
 
-function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
+function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sessionManager: CallSessionManager) {
   try {
     const openaiWs = new WebSocket(
       'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview',
@@ -208,7 +211,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
         const event = JSON.parse(data.toString());
 
         // Log all event types for debugging
-        if (event.type !== 'response.audio.delta') {
+        if (event.type !== 'response.audio.delta' && event.type !== 'response.audio_transcript.delta') {
           logger.info(`OpenAI event: ${event.type}`);
         }
 
@@ -222,6 +225,32 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
             session.openaiReady = true;
             // Now try to send greeting (Twilio might already be ready)
             trySendGreeting(session);
+            break;
+
+          case 'input_audio_buffer.speech_started':
+            // User started speaking — interrupt AI audio
+            logger.info('User speaking - interrupting AI audio');
+            // Clear Twilio's audio playback buffer so AI voice stops immediately
+            if (session.twilioWs?.readyState === WebSocket.OPEN && session.streamSid) {
+              session.twilioWs.send(JSON.stringify({
+                event: 'clear',
+                streamSid: session.streamSid
+              }));
+            }
+            // Cancel current OpenAI response so it stops generating
+            if (session.openaiWs?.readyState === WebSocket.OPEN) {
+              session.openaiWs.send(JSON.stringify({
+                type: 'response.cancel'
+              }));
+            }
+            break;
+
+          case 'input_audio_buffer.speech_stopped':
+            logger.info('User stopped speaking');
+            break;
+
+          case 'input_audio_buffer.committed':
+            logger.info('Audio buffer committed for transcription');
             break;
 
           case 'response.audio.delta':
@@ -247,6 +276,8 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
               role: 'assistant',
               content: event.transcript
             });
+            // Persist to session manager for transcript saving
+            sessionManager.addTranscript(session.callSid, 'ai', event.transcript).catch(() => {});
             break;
 
           case 'response.text.delta':
@@ -263,6 +294,8 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
               role: 'user',
               content: event.transcript
             });
+            // Persist to session manager for transcript saving
+            sessionManager.addTranscript(session.callSid, 'user', event.transcript).catch(() => {});
             break;
 
           case 'response.done':
@@ -329,7 +362,7 @@ async function getCallSession(callSid: string): Promise<any> {
   }
 }
 
-function cleanup(callSid: string) {
+function cleanup(callSid: string, sessionManager?: CallSessionManager) {
   const session = activeSessions.get(callSid);
   if (session) {
     if (session.openaiWs) {

@@ -23,6 +23,7 @@ app.use(express.json());
 
 app.use('/agent', agentRoutes);
 app.use('/call', callRoutes);
+app.use('/calls', callRoutes);  // Alias: frontend uses both /call and /calls
 app.use('/company', companyRoutes);
 app.use('/qa-rules', qaRulesRoutes);
 app.use('/qa-results', qaResultsRoutes);

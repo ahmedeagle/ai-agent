@@ -6,7 +6,7 @@ import os
 
 class KPICalculator:
     def __init__(self):
-        self.admin_service_url = f"http://localhost:{os.getenv('ADMIN_SERVICE_PORT', 3004)}"
+        self.admin_service_url = f"http://admin-service:{os.getenv('ADMIN_SERVICE_PORT', 3004)}"
     
     async def calculate_kpis(
         self,
