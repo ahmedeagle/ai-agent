@@ -14,22 +14,25 @@ const KB_SERVICE_URL = `http://knowledge-base-service:${process.env.KNOWLEDGE_BA
 // To customize agent behavior, edit the agent's System Prompt via the Agents management page.
 const DEFAULT_SYSTEM_PROMPT = `You are a professional AI assistant handling phone calls. You are helpful, polite, and efficient.
 
-IMPORTANT RULES:
+CRITICAL RULES (NEVER BREAK THESE):
 - ALWAYS respond in English only, regardless of what language the caller uses.
-- Give ONE concise response per turn. Do NOT send multiple messages in a row.
-- Wait for the caller to finish speaking before responding.
-- Keep responses brief and conversational — this is a phone call, not an essay.
-- If the caller says goodbye, end the conversation politely in one sentence. Do NOT continue talking.
+- Give ONE short response per turn. Maximum 2-3 sentences.
+- NEVER assume what the caller said. Only respond to what you actually heard clearly.
+- If you cannot understand the caller or hear nothing meaningful, say "I'm sorry, I didn't catch that. Could you please repeat?"
+- Do NOT invent or hallucinate the caller's words. If the input is unclear, ask for clarification.
+- If the caller says "bye", "goodbye", "thanks bye", or similar, respond ONLY with a brief farewell like "Goodbye, have a great day!" and nothing else.
+- Do NOT keep talking after the caller ends the conversation.
+- Wait for the caller to finish their full sentence before responding.
 
 On every new call:
-1. Greet the caller warmly and introduce yourself.
+1. Greet the caller warmly and introduce yourself briefly.
 2. Ask for the caller's name.
 3. Ask how you can help them today.
-4. Handle their request professionally.
-5. Before ending, ask if there is anything else you can help with.
-6. Close the call politely.
+4. Handle their request professionally in short responses.
+5. Before ending, ask if there is anything else.
+6. Close politely when they say goodbye.
 
-Always speak clearly and at a measured pace. Be empathetic and patient.`;
+Keep responses concise — this is a phone call, not a text chat.`;
 
 // Shared Redis client - avoids creating new connections per call
 let sharedRedis: Redis | null = null;
@@ -59,6 +62,7 @@ interface StreamSession {
   aiSpeaking: boolean;            // true while AI is generating/playing audio
   lastResponseEnd: number;        // timestamp of last response.done
   responseInProgress: boolean;    // true while a response is actively being generated
+  postSpeechCooldownMs: number;   // ms to block audio after AI finishes speaking
 }
 
 const activeSessions = new Map<string, StreamSession>();
@@ -92,7 +96,8 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
       twilioWs: ws,
       aiSpeaking: false,
       lastResponseEnd: 0,
-      responseInProgress: false
+      responseInProgress: false,
+      postSpeechCooldownMs: 1500
     };
     activeSessions.set(callSid, session);
 
@@ -124,9 +129,10 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
             break;
 
           case 'media':
-            // Only forward audio when AI is NOT actively speaking/generating
+            // Only forward audio when AI is NOT speaking AND cooldown has elapsed
             // This prevents background noise and echo from being picked up as user speech
-            if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady && !session.aiSpeaking) {
+            const inCooldown = (Date.now() - session.lastResponseEnd) < session.postSpeechCooldownMs;
+            if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady && !session.aiSpeaking && !inCooldown) {
               session.openaiWs.send(JSON.stringify({
                 type: 'input_audio_buffer.append',
                 audio: msg.media.payload
@@ -258,10 +264,12 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
           },
           turn_detection: {
             type: 'server_vad',
-            threshold: 0.65,
+            threshold: 0.8,
             prefix_padding_ms: 500,
-            silence_duration_ms: 1200
-          }
+            silence_duration_ms: 1500,
+            create_response: true
+          },
+          max_response_output_tokens: 150
         }
       }));
     });
