@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import Sidebar from '@/components/dashboard/Sidebar';
 import { Phone, Play, Pause, Volume2, PhoneOff } from 'lucide-react';
@@ -21,49 +21,86 @@ interface LiveCall {
   }>;
 }
 
+function getWsUrl(): string {
+  const url = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
+  // Socket.IO needs http(s):// — convert ws:// if needed
+  return url.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
+}
+
 export default function LiveCallsPage() {
   const [calls, setCalls] = useState<LiveCall[]>([]);
   const [selectedCall, setSelectedCall] = useState<LiveCall | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const selectedCallRef = useRef<LiveCall | null>(null);
 
+  // Keep ref in sync with state so Socket.IO callbacks see latest value
   useEffect(() => {
-    const newSocket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001');
-    setSocket(newSocket);
+    selectedCallRef.current = selectedCall;
+  }, [selectedCall]);
+
+  // Fetch active calls on page load
+  const fetchActiveCalls = useCallback(async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/voice/call/active?companyId=${encodeURIComponent(user.companyId || '')}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data && Array.isArray(data.data)) {
+          setCalls(data.data.map((c: any) => ({ ...c, transcript: c.transcript || [] })));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch active calls:', err);
+    }
+  }, []);
+
+  // Socket.IO connection — runs once on mount
+  useEffect(() => {
+    fetchActiveCalls();
+
+    const newSocket = io(getWsUrl(), { transports: ['websocket', 'polling'] });
+    socketRef.current = newSocket;
 
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    newSocket.emit('join-company', user.companyId);
+    newSocket.on('connect', () => {
+      newSocket.emit('join-company', user.companyId);
+    });
 
     newSocket.on('call:started', (call: LiveCall) => {
-      setCalls((prev) => [...prev, call]);
+      setCalls((prev) => {
+        if (prev.some((c) => c.callSid === call.callSid)) return prev;
+        return [...prev, { ...call, transcript: call.transcript || [] }];
+      });
     });
 
     newSocket.on('call:updated', (call: LiveCall) => {
-      setCalls((prev) => prev.map((c) => (c.id === call.id ? call : c)));
-      if (selectedCall?.id === call.id) {
-        setSelectedCall(call);
+      setCalls((prev) => prev.map((c) => (c.callSid === call.callSid ? { ...c, ...call } : c)));
+      if (selectedCallRef.current?.callSid === call.callSid) {
+        setSelectedCall((prev) => prev ? { ...prev, ...call } : null);
       }
     });
 
     newSocket.on('call:ended', (call: LiveCall) => {
-      setCalls((prev) => prev.filter((c) => c.id !== call.id));
-      if (selectedCall?.id === call.id) {
+      setCalls((prev) => prev.filter((c) => c.callSid !== call.callSid));
+      if (selectedCallRef.current?.callSid === call.callSid) {
         setSelectedCall(null);
       }
     });
 
-    newSocket.on('transcript', ({ callId, speaker, text, timestamp }) => {
+    newSocket.on('transcript', ({ callSid, speaker, text, timestamp }) => {
+      const entry = { speaker, text, timestamp };
       setCalls((prev) =>
         prev.map((c) =>
-          c.id === callId
-            ? { ...c, transcript: [...c.transcript, { speaker, text, timestamp }] }
+          c.callSid === callSid
+            ? { ...c, transcript: [...c.transcript, entry] }
             : c
         )
       );
-      if (selectedCall?.id === callId) {
+      if (selectedCallRef.current?.callSid === callSid) {
         setSelectedCall((prev) =>
-          prev
-            ? { ...prev, transcript: [...prev.transcript, { speaker, text, timestamp }] }
-            : null
+          prev ? { ...prev, transcript: [...prev.transcript, entry] } : null
         );
       }
     });
@@ -71,7 +108,21 @@ export default function LiveCallsPage() {
     return () => {
       newSocket.close();
     };
-  }, [selectedCall]);
+  }, [fetchActiveCalls]);
+
+  // Join/leave call room for transcript streaming when selecting a call
+  useEffect(() => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    if (selectedCall) {
+      sock.emit('join-call', selectedCall.callSid);
+    }
+    return () => {
+      if (selectedCall) {
+        sock.emit('leave-call', selectedCall.callSid);
+      }
+    };
+  }, [selectedCall?.callSid]);
 
   const endCall = async (callSid: string) => {
     try {

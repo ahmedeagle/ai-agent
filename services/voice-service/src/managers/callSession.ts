@@ -173,11 +173,9 @@ export class CallSessionManager {
 
     await redis.setex(`call:${callSid}`, 3600, JSON.stringify(session));
     
-    this.io.to(`call-${callSid}`).emit('transcript', {
-      speaker,
-      text,
-      timestamp: new Date()
-    });
+    const transcriptEntry = { callSid, speaker, text, timestamp: new Date() };
+    this.io.to(`call-${callSid}`).emit('transcript', transcriptEntry);
+    this.io.to(`company-${session.companyId}`).emit('transcript', transcriptEntry);
   }
 
   async endSession(callSid: string): Promise<void> {

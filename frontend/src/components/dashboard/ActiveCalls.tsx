@@ -18,14 +18,22 @@ export default function ActiveCalls() {
   const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    const newSocket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001');
+    const wsUrl = (process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001')
+      .replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
+    const newSocket = io(wsUrl, { transports: ['websocket', 'polling'] });
     setSocket(newSocket);
 
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    newSocket.emit('join-company', user.companyId);
+
+    newSocket.on('connect', () => {
+      newSocket.emit('join-company', user.companyId);
+    });
 
     newSocket.on('call:started', (call) => {
-      setActiveCalls((prev) => [...prev, call]);
+      setActiveCalls((prev) => {
+        if (prev.some((c) => c.id === call.id)) return prev;
+        return [...prev, call];
+      });
     });
 
     newSocket.on('call:ended', (call) => {
