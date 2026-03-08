@@ -11,5 +11,6 @@ ENV NODE_ENV production
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-EXPOSE 3000
+EXPOSE 3021
+ENV PORT 3021
 CMD ["node", "server.js"]
