@@ -10,14 +10,17 @@ interface StatsCardsProps {
     completedCalls: number;
     failedCalls: number;
     successRate: number;
-    avgDuration?: number;
-    minutesUsed?: number;
-    currentConcurrent?: number;
-    maxConcurrent?: number;
+    averageDuration?: number;
+    escalatedCalls?: number;
+    escalationRate?: number;
+    firstCallResolution?: number;
   };
 }
 
 export default function StatsCards({ data }: StatsCardsProps) {
+  const avgMinutes = data?.averageDuration ? data.averageDuration / 60 : 0;
+  const minutesUsed = data?.averageDuration && data?.totalCalls ? (data.averageDuration * data.totalCalls) / 60 : 0;
+
   const stats = [
     {
       name: 'Total Calls',
@@ -57,13 +60,13 @@ export default function StatsCards({ data }: StatsCardsProps) {
     },
     {
       name: 'Avg Duration',
-      value: data?.avgDuration ? `${data.avgDuration.toFixed(1)}m` : '—',
+      value: avgMinutes > 0 ? `${avgMinutes.toFixed(1)}m` : '—',
       icon: Clock,
       color: 'bg-amber-500',
     },
     {
       name: 'Minutes Used',
-      value: data?.minutesUsed?.toLocaleString() || '0',
+      value: minutesUsed > 0 ? minutesUsed.toFixed(0) : '0',
       icon: Zap,
       color: 'bg-teal-500',
     },
