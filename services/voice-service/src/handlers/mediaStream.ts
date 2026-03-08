@@ -146,12 +146,20 @@ function trySendGreeting(session: StreamSession) {
   logger.info(`Sending initial greeting for call: ${session.callSid}`);
   
   if (session.openaiWs?.readyState === WebSocket.OPEN) {
+    // Add a conversation item with the greeting instruction, then trigger response
     session.openaiWs.send(JSON.stringify({
-      type: 'response.create',
-      response: {
-        modalities: ['audio', 'text'],
-        instructions: 'Greet the caller warmly. Say something like "Hello! Thank you for calling. How can I help you today?"'
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: 'Hello, I am calling in. Please greet me warmly and ask how you can help.'
+        }]
       }
+    }));
+    session.openaiWs.send(JSON.stringify({
+      type: 'response.create'
     }));
   }
 }
@@ -260,7 +268,11 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket) {
           case 'response.done':
             // Log the full response output to debug
             const output = event.response?.output;
+            const statusDetails = event.response?.status_details;
             logger.info(`Response done. Status: ${event.response?.status}. Output items: ${output?.length || 0}`);
+            if (event.response?.status === 'failed') {
+              logger.error(`Response FAILED. Details: ${JSON.stringify(statusDetails)}`);
+            }
             if (output && output.length > 0) {
               for (const item of output) {
                 logger.info(`  Output item type: ${item.type}, role: ${item.role}, content types: ${item.content?.map((c: any) => c.type).join(', ') || 'none'}`);
