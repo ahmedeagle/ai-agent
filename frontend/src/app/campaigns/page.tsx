@@ -574,6 +574,10 @@ export default function CampaignsPage() {
                 className="flex-1 overflow-y-auto px-6 py-4"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (formStep < 3) {
+                    setFormStep(s => s + 1);
+                    return;
+                  }
                   const formData = new FormData(e.currentTarget);
                   const contacts = contactInput
                     .split(/[\n,]+/)

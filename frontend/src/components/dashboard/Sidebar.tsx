@@ -161,7 +161,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-3 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700">
+      <nav className="flex-1 px-2 py-3 overflow-y-auto sidebar-scrollbar">
         {navGroups.map((group, gi) => (
           <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
             {!collapsed && (
