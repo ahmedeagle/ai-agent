@@ -65,11 +65,11 @@ export default function ContactsPage() {
     setActionLoading('call');
     setActionMsg(null);
     try {
-      const agentRes = await api.get(`/admin/agent/company/${companyId}`);
+      const agentRes = await api.get('/admin/agent', { params: { companyId } });
       const agents = agentRes.data?.data || [];
       const agentId = agents[0]?.id;
       if (!agentId) throw new Error('No AI agent configured');
-      await api.post('/voice/outbound', { to: phoneNumber, agentId, companyId });
+      await api.post('/voice/call/outbound', { to: phoneNumber, agentId, companyId });
       setActionMsg({ type: 'success', text: 'Call initiated successfully' });
     } catch (e: any) {
       setActionMsg({ type: 'error', text: e?.response?.data?.error || e.message || 'Failed to initiate call' });
