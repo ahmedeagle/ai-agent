@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import Sidebar from '@/components/dashboard/Sidebar';
 import {
   Contact, Search, UserPlus, X, Phone, Mail, Tag,
-  MessageSquare, Globe, Star, ChevronRight, Upload
+  MessageSquare, MessageCircle, Globe, Star, ChevronRight, Upload, PhoneCall, Send
 } from 'lucide-react';
 
 const SEGMENTS = ['vip', 'standard', 'new'];
@@ -21,6 +21,13 @@ export default function ContactsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selected, setSelected] = useState<any>(null);
   const [form, setForm] = useState({ phoneNumber: '', email: '', firstName: '', lastName: '', segment: 'standard', tags: '', preferredLanguage: 'en' });
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
+  const [showSMS, setShowSMS] = useState(false);
+  const [msgText, setMsgText] = useState('');
+  const [emailForm, setEmailForm] = useState({ subject: '', body: '' });
 
   useEffect(() => { const u = localStorage.getItem('user'); if (u) setUser(JSON.parse(u)); }, []);
   const companyId = user?.companyId;
@@ -53,6 +60,80 @@ export default function ContactsPage() {
 
   const contacts = res?.data || [];
   const total = res?.total || 0;
+
+  const initiateCall = async (phoneNumber: string) => {
+    setActionLoading('call');
+    setActionMsg(null);
+    try {
+      const agentRes = await api.get(`/admin/agent/company/${companyId}`);
+      const agents = agentRes.data?.data || [];
+      const agentId = agents[0]?.id;
+      if (!agentId) throw new Error('No AI agent configured');
+      await api.post('/voice/outbound', { to: phoneNumber, agentId, companyId });
+      setActionMsg({ type: 'success', text: 'Call initiated successfully' });
+    } catch (e: any) {
+      setActionMsg({ type: 'error', text: e?.response?.data?.error || e.message || 'Failed to initiate call' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const sendWhatsAppMsg = async (to: string) => {
+    if (!msgText.trim()) return;
+    setActionLoading('whatsapp');
+    setActionMsg(null);
+    try {
+      await api.post('/whatsapp/send', { to, text: msgText, companyId, customerId: detail?.id });
+      setActionMsg({ type: 'success', text: 'WhatsApp message sent' });
+      setMsgText('');
+      setShowWhatsApp(false);
+      qc.invalidateQueries({ queryKey: ['contact-detail'] });
+    } catch (e: any) {
+      setActionMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to send WhatsApp' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const sendSMSMsg = async (to: string) => {
+    if (!msgText.trim()) return;
+    setActionLoading('sms');
+    setActionMsg(null);
+    try {
+      await api.post('/sms/send', { to, body: msgText, companyId, customerId: detail?.id, type: 'manual' });
+      setActionMsg({ type: 'success', text: 'SMS sent successfully' });
+      setMsgText('');
+      setShowSMS(false);
+      qc.invalidateQueries({ queryKey: ['contact-detail'] });
+    } catch (e: any) {
+      setActionMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to send SMS' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const sendEmailMsg = async (to: string) => {
+    if (!emailForm.subject.trim() || !emailForm.body.trim()) return;
+    setActionLoading('email');
+    setActionMsg(null);
+    try {
+      await api.post('/email/send', {
+        to,
+        subject: emailForm.subject,
+        template: emailForm.body,
+        companyId,
+        customerId: detail?.id,
+      });
+      setActionMsg({ type: 'success', text: 'Email sent successfully' });
+      setEmailForm({ subject: '', body: '' });
+      setShowEmail(false);
+      qc.invalidateQueries({ queryKey: ['contact-detail'] });
+    } catch (e: any) {
+      setActionMsg({ type: 'error', text: e?.response?.data?.error || 'Failed to send email' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const sentimentColor = (s: string) =>
     s === 'positive' ? 'text-green-600' : s === 'negative' ? 'text-red-600' : 'text-gray-500';
@@ -144,6 +225,138 @@ export default function ContactsPage() {
                       {detail.sentiment ? `Sentiment: ${detail.sentiment}` : ''}
                     </p>
                   </div>
+
+                  {/* Quick Actions */}
+                  <div className="flex gap-2 mb-5">
+                    {detail.phoneNumber && (
+                      <button
+                        onClick={() => initiateCall(detail.phoneNumber)}
+                        disabled={actionLoading === 'call'}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        title="Voice Call"
+                      >
+                        <PhoneCall className="h-3.5 w-3.5" />
+                        {actionLoading === 'call' ? 'Calling...' : 'Call'}
+                      </button>
+                    )}
+                    {detail.phoneNumber && (
+                      <button
+                        onClick={() => { setShowWhatsApp(!showWhatsApp); setShowSMS(false); setShowEmail(false); setMsgText(''); }}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                          showWhatsApp ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'
+                        }`}
+                        title="WhatsApp"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        WhatsApp
+                      </button>
+                    )}
+                    {detail.phoneNumber && (
+                      <button
+                        onClick={() => { setShowSMS(!showSMS); setShowWhatsApp(false); setShowEmail(false); setMsgText(''); }}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                          showSMS ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'
+                        }`}
+                        title="SMS"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        SMS
+                      </button>
+                    )}
+                    {detail.email && (
+                      <button
+                        onClick={() => { setShowEmail(!showEmail); setShowWhatsApp(false); setShowSMS(false); }}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                          showEmail ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                        }`}
+                        title="Email"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        Email
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Action feedback */}
+                  {actionMsg && (
+                    <div className={`mb-4 px-3 py-2 rounded-lg text-xs font-medium ${
+                      actionMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {actionMsg.text}
+                    </div>
+                  )}
+
+                  {/* WhatsApp compose */}
+                  {showWhatsApp && detail.phoneNumber && (
+                    <div className="mb-4 bg-green-50 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-green-800">Send WhatsApp to {detail.phoneNumber}</p>
+                      <textarea
+                        value={msgText}
+                        onChange={e => setMsgText(e.target.value)}
+                        placeholder="Type your message..."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-green-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 resize-none"
+                      />
+                      <button
+                        onClick={() => sendWhatsAppMsg(detail.phoneNumber)}
+                        disabled={actionLoading === 'whatsapp' || !msgText.trim()}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        {actionLoading === 'whatsapp' ? 'Sending...' : 'Send WhatsApp'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* SMS compose */}
+                  {showSMS && detail.phoneNumber && (
+                    <div className="mb-4 bg-violet-50 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-violet-800">Send SMS to {detail.phoneNumber}</p>
+                      <textarea
+                        value={msgText}
+                        onChange={e => setMsgText(e.target.value)}
+                        placeholder="Type your message..."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-violet-200 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 resize-none"
+                      />
+                      <button
+                        onClick={() => sendSMSMsg(detail.phoneNumber)}
+                        disabled={actionLoading === 'sms' || !msgText.trim()}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        {actionLoading === 'sms' ? 'Sending...' : 'Send SMS'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Email compose */}
+                  {showEmail && detail.email && (
+                    <div className="mb-4 bg-rose-50 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-rose-800">Send Email to {detail.email}</p>
+                      <input
+                        value={emailForm.subject}
+                        onChange={e => setEmailForm(f => ({ ...f, subject: e.target.value }))}
+                        placeholder="Subject"
+                        className="w-full px-3 py-2 border border-rose-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500"
+                      />
+                      <textarea
+                        value={emailForm.body}
+                        onChange={e => setEmailForm(f => ({ ...f, body: e.target.value }))}
+                        placeholder="Email body..."
+                        rows={4}
+                        className="w-full px-3 py-2 border border-rose-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 resize-none"
+                      />
+                      <button
+                        onClick={() => sendEmailMsg(detail.email)}
+                        disabled={actionLoading === 'email' || !emailForm.subject.trim() || !emailForm.body.trim()}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-600 text-white text-xs font-medium rounded-lg hover:bg-rose-700 disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        {actionLoading === 'email' ? 'Sending...' : 'Send Email'}
+                      </button>
+                    </div>
+                  )}
 
                   <div className="space-y-3 mb-6">
                     <div className="flex items-center gap-2 text-sm text-gray-600">

@@ -38,34 +38,64 @@ import {
 } from 'lucide-react';
 import LanguageSwitcher from '../LanguageSwitcher';
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Omnichannel Inbox', href: '/inbox', icon: Inbox },
-  { name: 'Live Calls', href: '/calls/live', icon: Phone },
-  { name: 'Call History', href: '/calls', icon: FileText },
-  { name: 'Recordings', href: '/recordings', icon: Headphones },
-  { name: 'SMS Inbox', href: '/sms', icon: MessageSquare },
-  { name: 'WhatsApp', href: '/whatsapp', icon: MessageCircle },
-  { name: 'Voicemail', href: '/voicemail', icon: Voicemail },
-  { name: 'Contacts', href: '/contacts', icon: Contact2 },
-  { name: 'Leads Pipeline', href: '/leads', icon: Target },
-  { name: 'AI Agents', href: '/agents', icon: Users },
-  { name: 'Campaigns', href: '/campaigns', icon: Megaphone },
-  { name: 'Surveys', href: '/surveys', icon: ClipboardCheck },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { name: 'QA & Scoring', href: '/qa', icon: CheckCircle },
-  { name: 'Monitoring', href: '/monitoring', icon: Eye },
-  { name: 'IVR Builder', href: '/ivr', icon: GitBranch },
-  { name: 'Queue', href: '/queue', icon: ListOrdered },
-  { name: 'Tools', href: '/tools', icon: Code },
-  { name: 'Knowledge Base', href: '/knowledge-base', icon: Brain },
-  { name: 'Team & Roles', href: '/team', icon: Shield },
-  { name: 'Audit Log', href: '/audit-log', icon: ClipboardList },
-  { name: 'Notifications', href: '/notifications', icon: Bell },
-  { name: 'Webhooks', href: '/webhooks', icon: Webhook },
-  { name: 'Integrations', href: '/integrations', icon: Plug },
-  { name: 'Billing', href: '/billing', icon: CreditCard },
-  { name: 'Settings', href: '/settings', icon: Settings },
+const navGroups = [
+  {
+    label: 'Overview',
+    items: [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+      { name: 'Omnichannel Inbox', href: '/inbox', icon: Inbox },
+    ],
+  },
+  {
+    label: 'Communication',
+    items: [
+      { name: 'Live Calls', href: '/calls/live', icon: Phone },
+      { name: 'Call History', href: '/calls', icon: FileText },
+      { name: 'Recordings', href: '/recordings', icon: Headphones },
+      { name: 'SMS Inbox', href: '/sms', icon: MessageSquare },
+      { name: 'WhatsApp', href: '/whatsapp', icon: MessageCircle },
+      { name: 'Voicemail', href: '/voicemail', icon: Voicemail },
+    ],
+  },
+  {
+    label: 'CRM',
+    items: [
+      { name: 'Contacts', href: '/contacts', icon: Contact2 },
+      { name: 'Leads Pipeline', href: '/leads', icon: Target },
+      { name: 'Campaigns', href: '/campaigns', icon: Megaphone },
+      { name: 'Surveys', href: '/surveys', icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: 'AI & Automation',
+    items: [
+      { name: 'AI Agents', href: '/agents', icon: Users },
+      { name: 'IVR Builder', href: '/ivr', icon: GitBranch },
+      { name: 'Queue', href: '/queue', icon: ListOrdered },
+      { name: 'Tools', href: '/tools', icon: Code },
+      { name: 'Knowledge Base', href: '/knowledge-base', icon: Brain },
+    ],
+  },
+  {
+    label: 'Analytics & QA',
+    items: [
+      { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+      { name: 'QA & Scoring', href: '/qa', icon: CheckCircle },
+      { name: 'Monitoring', href: '/monitoring', icon: Eye },
+    ],
+  },
+  {
+    label: 'Administration',
+    items: [
+      { name: 'Team & Roles', href: '/team', icon: Shield },
+      { name: 'Audit Log', href: '/audit-log', icon: ClipboardList },
+      { name: 'Notifications', href: '/notifications', icon: Bell },
+      { name: 'Webhooks', href: '/webhooks', icon: Webhook },
+      { name: 'Integrations', href: '/integrations', icon: Plug },
+      { name: 'Billing', href: '/billing', icon: CreditCard },
+      { name: 'Settings', href: '/settings', icon: Settings },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -131,31 +161,44 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700">
-        {navigation.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href;
-
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              title={collapsed ? item.name : undefined}
-              className={`
-                group flex items-center rounded-lg transition-colors duration-150
-                ${collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2'}
-                ${isActive
-                  ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-400'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white border-l-2 border-transparent'}
-              `}
-            >
-              <Icon className={`h-5 w-5 flex-shrink-0 ${collapsed ? '' : 'mr-3'}`} />
-              {!collapsed && (
-                <span className="text-sm font-medium truncate">{item.name}</span>
-              )}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-2 py-3 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700">
+        {navGroups.map((group, gi) => (
+          <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+            {!collapsed && (
+              <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                {group.label}
+              </p>
+            )}
+            {collapsed && gi > 0 && (
+              <div className="mx-3 mb-2 border-t border-gray-700/50" />
+            )}
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    title={collapsed ? item.name : undefined}
+                    className={`
+                      group flex items-center rounded-lg transition-colors duration-150
+                      ${collapsed ? 'justify-center px-2 py-2' : 'px-3 py-1.5'}
+                      ${isActive
+                        ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-400'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white border-l-2 border-transparent'}
+                    `}
+                  >
+                    <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${collapsed ? '' : 'mr-3'}`} />
+                    {!collapsed && (
+                      <span className="text-[13px] font-medium truncate">{item.name}</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* User & Footer */}
