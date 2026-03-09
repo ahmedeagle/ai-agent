@@ -10,7 +10,7 @@ import {
   Plus, Play, Pause, StopCircle, Upload, X, Clock, Users, Bot,
   Search, Filter, ChevronDown, ChevronUp, BarChart3, Phone, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Zap, Target, FileText, RefreshCw,
-  Calendar, ArrowUpDown, MoreHorizontal, Eye
+  Calendar, ArrowUpDown, MoreHorizontal, Eye, Pencil, Trash2
 } from 'lucide-react';
 
 type TabType = 'all' | 'active' | 'draft' | 'paused' | 'completed';
@@ -27,6 +27,8 @@ export default function CampaignsPage() {
   const [formStep, setFormStep] = useState(1);
   const [selectedDays, setSelectedDays] = useState([1, 2, 3, 4, 5]);
   const [campaignType, setCampaignType] = useState('outbound');
+  const [editingCampaign, setEditingCampaign] = useState<any>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -67,6 +69,37 @@ export default function CampaignsPage() {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
     }
   });
+
+  const updateCampaignMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => api.put(`/campaigns/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      setShowModal(false);
+      setEditingCampaign(null);
+      setContactInput('');
+      setFormStep(1);
+    }
+  });
+
+  const deleteCampaignMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/campaigns/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      setDeleteConfirm(null);
+    }
+  });
+
+  const openEditModal = (campaign: any) => {
+    setEditingCampaign(campaign);
+    setCampaignType(campaign.type || 'outbound');
+    setSelectedDays(campaign.schedule?.days || [1, 2, 3, 4, 5]);
+    const contacts = Array.isArray(campaign.contactList)
+      ? campaign.contactList.map((c: any) => typeof c === 'string' ? c : c.phone).join('\n')
+      : '';
+    setContactInput(contacts);
+    setFormStep(1);
+    setShowModal(true);
+  };
 
   // Computed stats
   const stats = useMemo(() => {
@@ -176,7 +209,7 @@ export default function CampaignsPage() {
               <p className="text-sm text-gray-500 mt-1">Manage automated outbound calling campaigns</p>
             </div>
             <button
-              onClick={() => { setShowModal(true); setFormStep(1); }}
+              onClick={() => { setEditingCampaign(null); setContactInput(''); setCampaignType('outbound'); setSelectedDays([1,2,3,4,5]); setShowModal(true); setFormStep(1); }}
               className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
             >
               <Plus className="h-4 w-4" />
@@ -299,7 +332,7 @@ export default function CampaignsPage() {
               </p>
               {!searchQuery && (
                 <button
-                  onClick={() => { setShowModal(true); setFormStep(1); }}
+                  onClick={() => { setEditingCampaign(null); setContactInput(''); setCampaignType('outbound'); setSelectedDays([1,2,3,4,5]); setShowModal(true); setFormStep(1); }}
                   className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700"
                 >
                   <Plus className="h-4 w-4" /> Create Campaign
@@ -397,7 +430,7 @@ export default function CampaignsPage() {
                               <Pause className="h-4 w-4" />
                             </button>
                           )}
-                          {campaign.status !== 'completed' && (
+                          {campaign.status !== 'completed' && campaign.status !== 'running' && (
                             <button
                               onClick={() => controlCampaignMutation.mutate({ id: campaign.id, action: 'stop' })}
                               className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
@@ -406,13 +439,36 @@ export default function CampaignsPage() {
                               <StopCircle className="h-4 w-4" />
                             </button>
                           )}
+                          {(campaign.status === 'running' || campaign.status === 'active') && (
+                            <button
+                              onClick={() => controlCampaignMutation.mutate({ id: campaign.id, action: 'stop' })}
+                              className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                              title="Stop"
+                            >
+                              <StopCircle className="h-4 w-4" />
+                            </button>
+                          )}
+                          <div className="w-px h-6 bg-gray-200 mx-0.5" />
+                          <button
+                            onClick={() => openEditModal(campaign)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(campaign.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                           <button
                             onClick={() => setExpandedId(isExpanded ? null : campaign.id)}
                             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
                             title="Details"
                           >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -495,10 +551,10 @@ export default function CampaignsPage() {
               {/* Modal Header */}
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Create Campaign</h2>
+                  <h2 className="text-lg font-bold text-gray-900">{editingCampaign ? 'Edit Campaign' : 'Create Campaign'}</h2>
                   <p className="text-xs text-gray-500">Step {formStep} of 3</p>
                 </div>
-                <button onClick={() => { setShowModal(false); setFormStep(1); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <button onClick={() => { setShowModal(false); setFormStep(1); setEditingCampaign(null); }} className="p-2 hover:bg-gray-100 rounded-lg">
                   <X className="h-5 w-5 text-gray-400" />
                 </button>
               </div>
@@ -533,7 +589,7 @@ export default function CampaignsPage() {
                     .filter(c => c.length > 0)
                     .map(phone => ({ phone, name: '' }));
 
-                  createCampaignMutation.mutate({
+                  const payload = {
                     companyId: user.companyId,
                     name: formData.get('name'),
                     agentId: formData.get('agentId'),
@@ -548,7 +604,13 @@ export default function CampaignsPage() {
                     retryDelay: parseInt(formData.get('retryDelay') as string) || 60,
                     script: formData.get('script') || null,
                     callObjective: formData.get('callObjective') || null,
-                  });
+                  };
+
+                  if (editingCampaign) {
+                    updateCampaignMutation.mutate({ id: editingCampaign.id, data: payload });
+                  } else {
+                    createCampaignMutation.mutate(payload);
+                  }
                 }}
               >
                 {/* Step 1: Campaign Details */}
@@ -559,6 +621,7 @@ export default function CampaignsPage() {
                       type="text"
                       name="name"
                       required
+                      defaultValue={editingCampaign?.name || ''}
                       placeholder="e.g., Q1 Customer Follow-up"
                       className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     />
@@ -601,6 +664,7 @@ export default function CampaignsPage() {
                       <select
                         name="agentId"
                         required
+                        defaultValue={editingCampaign?.agentId || ''}
                         className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       >
                         <option value="">Select an AI agent...</option>
@@ -624,6 +688,7 @@ export default function CampaignsPage() {
                     <input
                       type="text"
                       name="callObjective"
+                      defaultValue={editingCampaign?.callObjective || ''}
                       placeholder="e.g., Schedule appointment, Collect feedback, Confirm delivery"
                       className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     />
@@ -634,6 +699,7 @@ export default function CampaignsPage() {
                     <textarea
                       name="script"
                       rows={3}
+                      defaultValue={editingCampaign?.script || ''}
                       placeholder="Instructions for the AI agent during campaign calls..."
                       className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     />
@@ -743,7 +809,7 @@ export default function CampaignsPage() {
                       <input
                         type="number"
                         name="maxRetries"
-                        defaultValue={3}
+                        defaultValue={editingCampaign?.maxRetries ?? 3}
                         min={0}
                         max={10}
                         className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
@@ -755,7 +821,7 @@ export default function CampaignsPage() {
                       <input
                         type="number"
                         name="retryDelay"
-                        defaultValue={60}
+                        defaultValue={editingCampaign?.retryDelay ?? 60}
                         min={5}
                         className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                       />
@@ -781,7 +847,7 @@ export default function CampaignsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (formStep === 1) { setShowModal(false); setFormStep(1); }
+                    if (formStep === 1) { setShowModal(false); setFormStep(1); setEditingCampaign(null); }
                     else setFormStep(s => s - 1);
                   }}
                   className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -800,16 +866,57 @@ export default function CampaignsPage() {
                   <button
                     type="submit"
                     form="campaign-form"
-                    disabled={createCampaignMutation.isPending}
+                    disabled={createCampaignMutation.isPending || updateCampaignMutation.isPending}
                     className="px-6 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
                   >
-                    {createCampaignMutation.isPending ? (
-                      <><RefreshCw className="h-4 w-4 animate-spin" /> Creating...</>
+                    {(createCampaignMutation.isPending || updateCampaignMutation.isPending) ? (
+                      <><RefreshCw className="h-4 w-4 animate-spin" /> {editingCampaign ? 'Saving...' : 'Creating...'}</>
                     ) : (
-                      <><Plus className="h-4 w-4" /> Create Campaign</>
+                      editingCampaign
+                        ? <><Pencil className="h-4 w-4" /> Save Changes</>
+                        : <><Plus className="h-4 w-4" /> Create Campaign</>
                     )}
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]">
+            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-red-100 rounded-full">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Campaign</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-6">
+                Are you sure you want to delete this campaign? All associated call records will also be removed.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteCampaignMutation.mutate(deleteConfirm)}
+                  disabled={deleteCampaignMutation.isPending}
+                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                >
+                  {deleteCampaignMutation.isPending ? (
+                    <><RefreshCw className="h-4 w-4 animate-spin" /> Deleting...</>
+                  ) : (
+                    <><Trash2 className="h-4 w-4" /> Delete</>
+                  )}
+                </button>
               </div>
             </div>
           </div>

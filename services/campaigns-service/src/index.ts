@@ -84,6 +84,69 @@ app.get('/campaigns/:companyId', async (req, res) => {
   }
 });
 
+// Update campaign
+app.put('/campaigns/:campaignId', async (req, res) => {
+  try {
+    const {campaignId} = req.params;
+    const {name, agentId, type, contactList, schedule, maxRetries, retryDelay, script, callObjective} = req.body;
+
+    const existing = await prisma.campaign.findUnique({where: {id: campaignId}});
+    if (!existing) {
+      return res.status(404).json({success: false, error: 'Campaign not found'});
+    }
+    if (existing.status === 'running') {
+      return res.status(400).json({success: false, error: 'Cannot edit a running campaign. Pause it first.'});
+    }
+
+    const data: any = {};
+    if (name !== undefined) data.name = name;
+    if (agentId !== undefined) data.agentId = agentId;
+    if (type !== undefined) data.type = type;
+    if (schedule !== undefined) data.schedule = schedule;
+    if (maxRetries !== undefined) data.maxRetries = maxRetries;
+    if (retryDelay !== undefined) data.retryDelay = retryDelay;
+    if (script !== undefined) data.script = script;
+    if (callObjective !== undefined) data.callObjective = callObjective;
+    if (contactList !== undefined) {
+      data.contactList = contactList;
+      data.totalContacts = Array.isArray(contactList) ? contactList.length : 0;
+    }
+
+    const campaign = await prisma.campaign.update({
+      where: {id: campaignId},
+      data,
+      include: {agent: {select: {id: true, name: true, voice: true}}}
+    });
+
+    res.json({success: true, data: campaign});
+  } catch (error: any) {
+    res.status(500).json({success: false, error: error.message});
+  }
+});
+
+// Delete campaign
+app.delete('/campaigns/:campaignId', async (req, res) => {
+  try {
+    const {campaignId} = req.params;
+
+    const existing = await prisma.campaign.findUnique({where: {id: campaignId}});
+    if (!existing) {
+      return res.status(404).json({success: false, error: 'Campaign not found'});
+    }
+    if (existing.status === 'running') {
+      return res.status(400).json({success: false, error: 'Cannot delete a running campaign. Stop it first.'});
+    }
+
+    // Delete campaign calls first, then campaign (cascade should handle it but being explicit)
+    await prisma.campaignCall.deleteMany({where: {campaignId}});
+    await prisma.campaign.delete({where: {id: campaignId}});
+
+    res.json({success: true, message: 'Campaign deleted'});
+  } catch (error: any) {
+    res.status(500).json({success: false, error: error.message});
+  }
+});
+
 // Get campaign by ID
 app.get('/campaigns/:companyId/:campaignId', async (req, res) => {
   try {
