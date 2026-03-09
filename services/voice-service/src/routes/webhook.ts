@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import twilio from 'twilio';
 import { TwilioHandler } from '../handlers/twilio';
+import { CallSessionManager } from '../managers/callSession';
 
-export default (twilioHandler: TwilioHandler) => {
+export default (twilioHandler: TwilioHandler, sessionManager?: CallSessionManager) => {
   const router = Router();
   const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -11,7 +12,32 @@ export default (twilioHandler: TwilioHandler) => {
     const response = new VoiceResponse();
     
     try {
-      const { CallSid, From, To } = req.body;
+      const { CallSid, From, To, Direction } = req.body;
+
+      // ── Outbound call: session already exists, skip validation ──
+      if (sessionManager) {
+        const existingSession = await sessionManager.getSession(CallSid);
+        if (existingSession && existingSession.direction === 'outbound') {
+          // Outbound call answered — connect directly to AI stream
+          await twilioHandler.handleIncomingCall({
+            callSid: CallSid,
+            from: From,
+            to: To,
+            agentConfig: { id: existingSession.agentId, companyId: existingSession.companyId }
+          });
+
+          const baseUrl = process.env.WEBHOOK_BASE_URL || `wss://${req.get('host')}`;
+          const wsUrl = baseUrl.replace(/^https?:\/\//, 'wss://');
+
+          const connect = response.connect();
+          connect.stream({
+            url: `${wsUrl}/stream/${CallSid}`
+          });
+
+          res.type('text/xml');
+          return res.send(response.toString());
+        }
+      }
       
       // ── Step 1: Validate billing + concurrent limits + agent ──
       const validation = await twilioHandler.validateIncomingCall({

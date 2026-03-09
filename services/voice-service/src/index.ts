@@ -32,7 +32,7 @@ const callSessionManager = new CallSessionManager(io);
 const twilioHandler = new TwilioHandler(callSessionManager);
 
 // Routes
-app.use('/webhook', webhookRoutes(twilioHandler));
+app.use('/webhook', webhookRoutes(twilioHandler, callSessionManager));
 app.use('/call', callRoutes(callSessionManager));
 
 app.get('/health', (req, res) => {
