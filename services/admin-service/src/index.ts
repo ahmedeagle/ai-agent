@@ -14,6 +14,7 @@ import dncRoutes from './routes/dnc';
 import callbackRoutes from './routes/callback';
 import notificationRoutes from './routes/notification';
 import knowledgeBaseRoutes from './routes/knowledgeBase';
+import channelStatsRoutes from './routes/channelStats';
 import { auditMiddleware } from './middleware/audit';
 
 dotenv.config();
@@ -41,6 +42,7 @@ app.use('/dnc', dncRoutes);
 app.use('/callback', callbackRoutes);
 app.use('/notification', notificationRoutes);
 app.use('/kb', knowledgeBaseRoutes);
+app.use('/channel-stats', channelStatsRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ success: true, service: 'admin-service', status: 'healthy' });

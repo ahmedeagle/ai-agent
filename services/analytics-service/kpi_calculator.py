@@ -19,8 +19,18 @@ class KPICalculator:
         # Fetch call data
         calls = await self._fetch_calls(company_id, start_date, end_date)
         
+        # Fetch channel stats (WhatsApp, SMS, Email)
+        channels = await self._fetch_channel_stats(company_id, start_date, end_date)
+        
         if not calls:
-            return self._empty_kpis()
+            empty = self._empty_kpis()
+            empty["channels"] = channels
+            # Even with no calls, compute total interactions from channels
+            wa_total = channels.get('whatsapp', {}).get('total', 0)
+            sms_total = channels.get('sms', {}).get('total', 0)
+            email_total = channels.get('email', {}).get('total', 0)
+            empty["overview"]["totalInteractions"] = wa_total + sms_total + email_total
+            return empty
         
         total_calls = len(calls)
         completed_calls = [c for c in calls if c.get('status') == 'completed']
@@ -61,8 +71,15 @@ class KPICalculator:
             tool_success_rate=tool_success_rate
         )
         
+        # Total interactions across all channels
+        wa_total = channels.get('whatsapp', {}).get('total', 0)
+        sms_total = channels.get('sms', {}).get('total', 0)
+        email_total = channels.get('email', {}).get('total', 0)
+        total_interactions = total_calls + wa_total + sms_total + email_total
+        
         return {
             "overview": {
+                "totalInteractions": total_interactions,
                 "totalCalls": total_calls,
                 "inboundCalls": len(inbound_calls),
                 "outboundCalls": len(outbound_calls),
@@ -83,7 +100,8 @@ class KPICalculator:
             "aiPerformance": {
                 "score": round(ai_score, 2),
                 "rating": self._get_rating(ai_score)
-            }
+            },
+            "channels": channels
         }
     
     def _calculate_ai_score(
@@ -118,6 +136,7 @@ class KPICalculator:
         """Return empty KPI structure"""
         return {
             "overview": {
+                "totalInteractions": 0,
                 "totalCalls": 0,
                 "inboundCalls": 0,
                 "outboundCalls": 0,
@@ -138,6 +157,11 @@ class KPICalculator:
             "aiPerformance": {
                 "score": 0,
                 "rating": "No Data"
+            },
+            "channels": {
+                "whatsapp": {"total": 0, "inbound": 0, "outbound": 0, "delivered": 0, "failed": 0},
+                "sms": {"total": 0, "inbound": 0, "outbound": 0, "delivered": 0, "failed": 0},
+                "email": {"total": 0, "sent": 0, "delivered": 0, "failed": 0}
             }
         }
     
@@ -161,3 +185,27 @@ class KPICalculator:
         except Exception as e:
             print(f"Error fetching calls: {e}")
             return []
+    
+    async def _fetch_channel_stats(self, company_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
+        """Fetch WhatsApp, SMS, Email stats from admin service"""
+        default = {
+            "whatsapp": {"total": 0, "inbound": 0, "outbound": 0, "delivered": 0, "failed": 0},
+            "sms": {"total": 0, "inbound": 0, "outbound": 0, "delivered": 0, "failed": 0},
+            "email": {"total": 0, "sent": 0, "delivered": 0, "failed": 0}
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.admin_service_url}/channel-stats",
+                    params={
+                        "companyId": company_id,
+                        "startDate": start_date,
+                        "endDate": end_date
+                    }
+                )
+                if response.status_code == 200:
+                    return response.json().get('data', default)
+                return default
+        except Exception as e:
+            print(f"Error fetching channel stats: {e}")
+            return default
