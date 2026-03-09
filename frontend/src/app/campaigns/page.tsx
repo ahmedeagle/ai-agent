@@ -430,16 +430,7 @@ export default function CampaignsPage() {
                               <Pause className="h-4 w-4" />
                             </button>
                           )}
-                          {campaign.status !== 'completed' && campaign.status !== 'running' && (
-                            <button
-                              onClick={() => controlCampaignMutation.mutate({ id: campaign.id, action: 'stop' })}
-                              className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                              title="Stop"
-                            >
-                              <StopCircle className="h-4 w-4" />
-                            </button>
-                          )}
-                          {(campaign.status === 'running' || campaign.status === 'active') && (
+                          {campaign.status !== 'completed' && (
                             <button
                               onClick={() => controlCampaignMutation.mutate({ id: campaign.id, action: 'stop' })}
                               className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
@@ -469,6 +460,7 @@ export default function CampaignsPage() {
                             title="Details"
                           >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
                         </div>
                       </div>
                     </div>
