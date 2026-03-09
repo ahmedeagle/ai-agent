@@ -21,14 +21,17 @@ export default (sessionManager: CallSessionManager) => {
     try {
       const { to, agentId, companyId } = req.body;
 
+      // Use public webhook URL - req.get('host') returns internal Docker hostname
+      const baseUrl = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
+
       const call = await client.calls.create({
         to,
         from: process.env.TWILIO_PHONE_NUMBER!,
-        url: `https://${req.get('host')}/webhook/voice/incoming`,
-        statusCallback: `https://${req.get('host')}/webhook/voice/status`,
+        url: `${baseUrl}/webhook/voice/incoming`,
+        statusCallback: `${baseUrl}/webhook/voice/status`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         record: true,
-        recordingStatusCallback: `https://${req.get('host')}/webhook/voice/recording`
+        recordingStatusCallback: `${baseUrl}/webhook/voice/recording`
       });
 
       // Store call metadata
