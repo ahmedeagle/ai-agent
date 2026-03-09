@@ -314,16 +314,20 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             break;
 
           case 'input_audio_buffer.speech_started':
-            // User started speaking — only clear Twilio playback buffer
-            // Do NOT cancel the OpenAI response — cancelling mid-sentence causes
-            // fragmented, incomplete answers. Let OpenAI finish generating;
-            // the Twilio buffer clear stops the caller from hearing overlapping audio.
-            logger.info('User speaking - clearing Twilio audio buffer');
-            if (session.twilioWs?.readyState === WebSocket.OPEN && session.streamSid) {
-              session.twilioWs.send(JSON.stringify({
-                event: 'clear',
-                streamSid: session.streamSid
-              }));
+            // Only allow barge-in (clear Twilio buffer) when AI is NOT actively speaking.
+            // During AI speech, background noise triggers this event and clears the
+            // audio buffer, cutting the response mid-sentence even though the
+            // transcript records the full text. Guard with aiSpeaking flag.
+            if (!session.aiSpeaking && !session.responseInProgress) {
+              logger.info('User speaking (AI idle) - clearing Twilio audio buffer');
+              if (session.twilioWs?.readyState === WebSocket.OPEN && session.streamSid) {
+                session.twilioWs.send(JSON.stringify({
+                  event: 'clear',
+                  streamSid: session.streamSid
+                }));
+              }
+            } else {
+              logger.info('speech_started during AI response - ignoring to prevent cut-off');
             }
             break;
 
