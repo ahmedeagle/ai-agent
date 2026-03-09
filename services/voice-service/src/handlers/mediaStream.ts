@@ -70,8 +70,9 @@ interface StreamSession {
   greetingSent: boolean;
   aiSpeaking: boolean;            // true while AI is generating/playing audio
   lastResponseEnd: number;        // timestamp of last response.done
+  lastAudioSent: number;          // timestamp of last audio chunk sent to Twilio
   responseInProgress: boolean;    // true while a response is actively being generated
-  postSpeechCooldownMs: number;   // ms to block audio after AI finishes speaking
+  postSpeechCooldownMs: number;   // ms to block audio after LAST AUDIO CHUNK (not response.done)
   waitingForResponse: boolean;    // true between response.create and first audio delta
 }
 
@@ -106,8 +107,9 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
       twilioWs: ws,
       aiSpeaking: false,
       lastResponseEnd: 0,
+      lastAudioSent: 0,
       responseInProgress: false,
-      postSpeechCooldownMs: 2500,
+      postSpeechCooldownMs: 4000,
       waitingForResponse: false
     };
     activeSessions.set(callSid, session);
@@ -142,8 +144,13 @@ export function setupMediaStreamWebSocket(server: HttpServer, sessionManager: Ca
           case 'media':
             // Only forward audio when AI is completely idle:
             // - not speaking, not waiting for a response, not in post-speech cooldown
+            // Cooldown is based on LAST AUDIO CHUNK sent to Twilio (not response.done)
+            // because Twilio buffers audio and plays it for seconds after generation ends.
+            // If we start forwarding mic audio too soon, the AI's own playback gets
+            // picked up by the caller's mic and echoed back as fake "user speech".
             const isAiBusy = session.aiSpeaking || session.waitingForResponse || session.responseInProgress;
-            const inCooldown = session.lastResponseEnd > 0 && (Date.now() - session.lastResponseEnd) < session.postSpeechCooldownMs;
+            const cooldownRef = Math.max(session.lastAudioSent, session.lastResponseEnd);
+            const inCooldown = cooldownRef > 0 && (Date.now() - cooldownRef) < session.postSpeechCooldownMs;
             if (session.openaiWs?.readyState === WebSocket.OPEN && session.openaiReady && !isAiBusy && !inCooldown) {
               session.openaiWs.send(JSON.stringify({
                 type: 'input_audio_buffer.append',
@@ -344,7 +351,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
             session.aiSpeaking = true;
             session.responseInProgress = true;
             session.waitingForResponse = false;
-            // Forward AI audio back to Twilio
+            // Forward AI audio back to Twilio and track timing
             if (twilioWs.readyState === WebSocket.OPEN && session.streamSid) {
               twilioWs.send(JSON.stringify({
                 event: 'media',
@@ -353,6 +360,7 @@ function connectOpenAIRealtime(session: StreamSession, twilioWs: WebSocket, sess
                   payload: event.delta
                 }
               }));
+              session.lastAudioSent = Date.now();
             }
             break;
 
