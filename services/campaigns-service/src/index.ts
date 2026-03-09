@@ -23,14 +23,13 @@ app.post('/campaigns', async (req, res) => {
       companyId,
       name,
       agentId,
+      type,
       contactList,
-      startTime,
-      endTime,
-      maxCallsPerDay,
+      schedule,
       maxRetries,
       retryDelay,
       script,
-      metadata
+      callObjective,
     } = req.body;
 
     if (!Array.isArray(contactList) || contactList.length === 0) {
@@ -42,15 +41,14 @@ app.post('/campaigns', async (req, res) => {
         companyId,
         name,
         agentId,
+        type: type || 'outbound',
         contactList,
         totalContacts: contactList.length,
-        startTime: startTime ? new Date(startTime) : null,
-        endTime: endTime ? new Date(endTime) : null,
-        maxCallsPerDay,
+        schedule: schedule || null,
         maxRetries: maxRetries || 3,
-        retryDelay: retryDelay || 60,
+        retryDelay: retryDelay || 3600,
         script,
-        metadata,
+        callObjective,
         status: 'draft'
       }
     });
@@ -137,10 +135,9 @@ app.post('/campaigns/:campaignId/start', async (req, res) => {
     const contactList = campaign.contactList as any[];
     const calls = contactList.map(contact => ({
       campaignId,
-      name: contact.name || 'Unknown',
-      phone: contact.phone,
-      email: contact.email || null,
-      customFields: contact.customFields || {},
+      contactName: contact.name || 'Unknown',
+      phone: contact.phone || contact,
+      contactData: contact.data || null,
       status: 'pending',
       attempts: 0
     }));
@@ -284,8 +281,8 @@ app.patch('/campaigns/calls/:callId', async (req, res) => {
         status,
         callDuration,
         callOutcome,
-        notes,
-        lastAttemptAt: new Date()
+        callNotes: notes,
+        lastAttempt: new Date()
       }
     });
 
@@ -325,13 +322,26 @@ async function processCampaignCalls(campaignId: string) {
       return;
     }
 
-    // Check time window
-    const now = new Date();
-    if (campaign.startTime && now < campaign.startTime) {
-      console.log(`Campaign ${campaignId} scheduled for ${campaign.startTime}`);
-      return;
+    // Check time window from schedule
+    const schedule = campaign.schedule as any;
+    if (schedule?.startTime && schedule?.endTime) {
+      const now = new Date();
+      const [startH, startM] = schedule.startTime.split(':').map(Number);
+      const [endH, endM] = schedule.endTime.split(':').map(Number);
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+      if (currentMinutes < startMinutes || currentMinutes > endMinutes) {
+        console.log(`Campaign ${campaignId} outside scheduled hours`);
+        return;
+      }
+      // check day of week
+      if (schedule.days && !schedule.days.includes(now.getDay())) {
+        console.log(`Campaign ${campaignId} not scheduled for today`);
+        return;
+      }
     }
-    if (campaign.endTime && now > campaign.endTime) {
+    if (campaign.endDate && now > campaign.endDate) {
       await prisma.campaign.update({
         where: {id: campaignId},
         data: {status: 'completed'}
@@ -381,7 +391,7 @@ async function makeOutboundCall(campaign: any, call: any) {
       data: {
         status: 'calling',
         attempts: {increment: 1},
-        lastAttemptAt: new Date()
+        lastAttempt: new Date()
       }
     });
 
