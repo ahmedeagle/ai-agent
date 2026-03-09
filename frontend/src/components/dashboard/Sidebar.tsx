@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -30,7 +31,10 @@ import {
   MessageCircle,
   ClipboardCheck,
   Webhook,
-  Bell
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+  User,
 } from 'lucide-react';
 import LanguageSwitcher from '../LanguageSwitcher';
 
@@ -66,6 +70,23 @@ const navigation = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState<{ firstName?: string; lastName?: string; email?: string } | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar-collapsed');
+    if (saved === 'true') setCollapsed(true);
+    try {
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      setUser(userData);
+    } catch {}
+  }, []);
+
+  const toggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem('sidebar-collapsed', String(next));
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -73,45 +94,101 @@ export default function Sidebar() {
     window.location.href = '/login';
   };
 
+  const displayName = user?.firstName
+    ? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+    : user?.email || '';
+
+  const initials = user?.firstName
+    ? `${user.firstName[0]}${user.lastName ? user.lastName[0] : ''}`.toUpperCase()
+    : user?.email?.[0]?.toUpperCase() || 'U';
+
   return (
-    <div className="flex flex-col w-64 bg-gray-900">
-      <div className="flex items-center justify-center h-16 bg-gray-800">
-        <span className="text-white text-xl font-bold">AI Call Center</span>
+    <div
+      className={`flex flex-col bg-gray-900 transition-all duration-300 ease-in-out ${
+        collapsed ? 'w-[68px]' : 'w-64'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-center h-16 bg-gray-800 px-3 relative">
+        {!collapsed && (
+          <span className="text-white text-lg font-bold truncate flex-1">
+            AI Call Center
+          </span>
+        )}
+        <button
+          onClick={toggleCollapse}
+          className={`p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 transition-colors ${
+            collapsed ? 'mx-auto' : ''
+          }`}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-5 w-5" />
+          ) : (
+            <ChevronLeft className="h-5 w-5" />
+          )}
+        </button>
       </div>
-      
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+
+      {/* Navigation */}
+      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
-          
+
           return (
             <Link
               key={item.name}
               href={item.href}
+              title={collapsed ? item.name : undefined}
               className={`
-                group flex items-center px-3 py-2 text-sm font-medium rounded-md
-                ${isActive 
-                  ? 'bg-gray-800 text-white' 
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'}
+                group flex items-center rounded-lg transition-colors duration-150
+                ${collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2'}
+                ${isActive
+                  ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-400'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-white border-l-2 border-transparent'}
               `}
             >
-              <Icon className="mr-3 h-5 w-5 flex-shrink-0" />
-              {item.name}
+              <Icon className={`h-5 w-5 flex-shrink-0 ${collapsed ? '' : 'mr-3'}`} />
+              {!collapsed && (
+                <span className="text-sm font-medium truncate">{item.name}</span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      {/* Language Switcher & Logout */}
-      <div className="px-4 py-4 bg-gray-800 border-t border-gray-700 space-y-3">
-        <LanguageSwitcher />
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-2 text-gray-300 hover:text-white text-sm"
-        >
-          <LogOut className="h-4 w-4" />
-          Logout
-        </button>
+      {/* User & Footer */}
+      <div className="bg-gray-800 border-t border-gray-700">
+        {/* User Profile */}
+        <div className={`flex items-center gap-3 px-3 py-3 ${collapsed ? 'justify-center' : ''}`}>
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+            <span className="text-white text-xs font-bold">{initials}</span>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-white truncate">{displayName}</p>
+              {user?.firstName && user?.email && (
+                <p className="text-xs text-gray-400 truncate">{user.email}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Language & Logout */}
+        <div className={`px-3 pb-3 space-y-2 ${collapsed ? 'flex flex-col items-center' : ''}`}>
+          {!collapsed && <LanguageSwitcher />}
+          <button
+            onClick={handleLogout}
+            title={collapsed ? 'Logout' : undefined}
+            className={`flex items-center gap-2 text-gray-400 hover:text-red-400 text-sm transition-colors ${
+              collapsed ? 'p-2 rounded-md hover:bg-gray-700' : 'w-full'
+            }`}
+          >
+            <LogOut className="h-4 w-4 flex-shrink-0" />
+            {!collapsed && <span>Logout</span>}
+          </button>
+        </div>
       </div>
     </div>
   );
