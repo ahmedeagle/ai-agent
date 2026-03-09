@@ -386,9 +386,9 @@ async function processCampaignCalls(campaignId: string) {
     }
 
     // Check time window from schedule
+    const now = new Date();
     const schedule = campaign.schedule as any;
     if (schedule?.startTime && schedule?.endTime) {
-      const now = new Date();
       const [startH, startM] = schedule.startTime.split(':').map(Number);
       const [endH, endM] = schedule.endTime.split(':').map(Number);
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -462,13 +462,12 @@ async function makeOutboundCall(campaign: any, call: any) {
 
     // Initiate call via voice service (Twilio)
     try {
-      const response = await axios.post(`${VOICE_SERVICE_URL}/calls/initiate`, {
+      const response = await axios.post(`${VOICE_SERVICE_URL}/call/outbound`, {
         to: call.phone,
         companyId: campaign.companyId,
         agentId: campaign.agentId,
         campaignId: campaign.id,
         campaignCallId: call.id,
-        customScript: campaign.script
       });
 
       if (response.data.success) {
@@ -482,7 +481,7 @@ async function makeOutboundCall(campaign: any, call: any) {
         where: {id: call.id},
         data: {
           status: call.attempts >= campaign.maxRetries ? 'failed' : 'pending',
-          notes: `Call initiation failed: ${callError.message}`
+          callNotes: `Call initiation failed: ${callError.message}`
         }
       });
 
