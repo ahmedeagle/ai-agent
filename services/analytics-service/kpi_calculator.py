@@ -25,6 +25,7 @@ class KPICalculator:
         total_calls = len(calls)
         completed_calls = [c for c in calls if c.get('status') == 'completed']
         failed_calls = [c for c in calls if c.get('status') in ['failed', 'no-answer', 'busy']]
+        missed_calls = [c for c in calls if c.get('status') not in ['completed', 'failed', 'no-answer', 'busy', 'in-progress']]
         escalated_calls = [c for c in calls if c.get('escalated', False)]
         
         # Separate by direction
@@ -67,6 +68,7 @@ class KPICalculator:
                 "outboundCalls": len(outbound_calls),
                 "completedCalls": len(completed_calls),
                 "failedCalls": len(failed_calls),
+                "missedCalls": len(missed_calls),
                 "escalatedCalls": len(escalated_calls),
                 "averageDuration": round(avg_duration, 2),
                 "successRate": round(success_rate, 2),
@@ -121,6 +123,7 @@ class KPICalculator:
                 "outboundCalls": 0,
                 "completedCalls": 0,
                 "failedCalls": 0,
+                "missedCalls": 0,
                 "escalatedCalls": 0,
                 "averageDuration": 0,
                 "successRate": 0,

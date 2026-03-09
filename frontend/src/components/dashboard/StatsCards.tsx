@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, CheckCircle, XCircle, TrendingUp, PhoneIncoming, PhoneOutgoing, Clock, DollarSign, Users, Zap } from 'lucide-react';
+import { Phone, CheckCircle, XCircle, TrendingUp, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, DollarSign, Users, Zap } from 'lucide-react';
 
 interface StatsCardsProps {
   data?: {
@@ -9,6 +9,7 @@ interface StatsCardsProps {
     outboundCalls: number;
     completedCalls: number;
     failedCalls: number;
+    missedCalls?: number;
     successRate: number;
     averageDuration?: number;
     escalatedCalls?: number;
@@ -53,6 +54,12 @@ export default function StatsCards({ data }: StatsCardsProps) {
       color: 'bg-red-500',
     },
     {
+      name: 'Missed',
+      value: data?.missedCalls || 0,
+      icon: PhoneMissed,
+      color: 'bg-orange-500',
+    },
+    {
       name: 'Success Rate',
       value: `${data?.successRate?.toFixed(1) || 0}%`,
       icon: TrendingUp,
@@ -73,7 +80,7 @@ export default function StatsCards({ data }: StatsCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
       {stats.map((stat) => {
         const Icon = stat.icon;
         return (
