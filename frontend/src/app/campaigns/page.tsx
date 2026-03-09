@@ -30,6 +30,7 @@ export default function CampaignsPage() {
   const [editingCampaign, setEditingCampaign] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -569,45 +570,9 @@ export default function CampaignsPage() {
               </div>
 
               {/* Modal Body */}
-              <form
-                id="campaign-form"
+              <div
+                ref={formRef}
                 className="flex-1 overflow-y-auto px-6 py-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (formStep < 3) {
-                    setFormStep(s => s + 1);
-                    return;
-                  }
-                  const formData = new FormData(e.currentTarget);
-                  const contacts = contactInput
-                    .split(/[\n,]+/)
-                    .map(c => c.trim())
-                    .filter(c => c.length > 0)
-                    .map(phone => ({ phone, name: '' }));
-
-                  const payload = {
-                    companyId: user.companyId,
-                    name: formData.get('name'),
-                    agentId: formData.get('agentId'),
-                    type: campaignType,
-                    contactList: contacts,
-                    schedule: {
-                      startTime: formData.get('startTime') || '09:00',
-                      endTime: formData.get('endTime') || '17:00',
-                      days: selectedDays,
-                    },
-                    maxRetries: parseInt(formData.get('maxRetries') as string) || 3,
-                    retryDelay: parseInt(formData.get('retryDelay') as string) || 60,
-                    script: formData.get('script') || null,
-                    callObjective: formData.get('callObjective') || null,
-                  };
-
-                  if (editingCampaign) {
-                    updateCampaignMutation.mutate({ id: editingCampaign.id, data: payload });
-                  } else {
-                    createCampaignMutation.mutate(payload);
-                  }
-                }}
               >
                 {/* Step 1: Campaign Details */}
                 <div className={formStep === 1 ? 'space-y-4' : 'hidden'}>
@@ -616,7 +581,6 @@ export default function CampaignsPage() {
                     <input
                       type="text"
                       name="name"
-                      required
                       defaultValue={editingCampaign?.name || ''}
                       placeholder="e.g., Q1 Customer Follow-up"
                       className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
@@ -659,7 +623,6 @@ export default function CampaignsPage() {
                     ) : (
                       <select
                         name="agentId"
-                        required
                         defaultValue={editingCampaign?.agentId || ''}
                         className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       >
@@ -730,7 +693,6 @@ export default function CampaignsPage() {
                       rows={8}
                       placeholder={"Enter phone numbers (one per line or comma-separated)\n+1234567890\n+0987654321\n+1122334455"}
                       className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                      required
                     />
                     <div className="flex items-center justify-between mt-1.5">
                       <p className="text-xs text-gray-500">
@@ -836,7 +798,7 @@ export default function CampaignsPage() {
                     </div>
                   </div>
                 </div>
-              </form>
+              </div>
 
               {/* Modal Footer */}
               <div className="px-6 py-4 border-t border-gray-100 flex justify-between">
@@ -860,9 +822,46 @@ export default function CampaignsPage() {
                   </button>
                 ) : (
                   <button
-                    type="submit"
-                    form="campaign-form"
+                    type="button"
                     disabled={createCampaignMutation.isPending || updateCampaignMutation.isPending}
+                    onClick={() => {
+                      const el = formRef.current;
+                      if (!el) return;
+                      const getValue = (name: string) => (el.querySelector(`[name="${name}"]`) as HTMLInputElement)?.value || '';
+                      const contacts = contactInput
+                        .split(/[\n,]+/)
+                        .map(c => c.trim())
+                        .filter(c => c.length > 0)
+                        .map(phone => ({ phone, name: '' }));
+
+                      const name = getValue('name');
+                      const agentId = getValue('agentId');
+                      if (!name || !agentId) { setFormStep(1); return; }
+                      if (contacts.length === 0) { setFormStep(2); return; }
+
+                      const payload = {
+                        companyId: user.companyId,
+                        name,
+                        agentId,
+                        type: campaignType,
+                        contactList: contacts,
+                        schedule: {
+                          startTime: getValue('startTime') || '09:00',
+                          endTime: getValue('endTime') || '17:00',
+                          days: selectedDays,
+                        },
+                        maxRetries: parseInt(getValue('maxRetries')) || 3,
+                        retryDelay: parseInt(getValue('retryDelay')) || 60,
+                        script: getValue('script') || null,
+                        callObjective: getValue('callObjective') || null,
+                      };
+
+                      if (editingCampaign) {
+                        updateCampaignMutation.mutate({ id: editingCampaign.id, data: payload });
+                      } else {
+                        createCampaignMutation.mutate(payload);
+                      }
+                    }}
                     className="px-6 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
                   >
                     {(createCampaignMutation.isPending || updateCampaignMutation.isPending) ? (
