@@ -19,7 +19,7 @@ export default (sessionManager: CallSessionManager) => {
   // Initiate outbound call
   router.post('/outbound', async (req, res) => {
     try {
-      const { to, agentId, companyId } = req.body;
+      const { to, agentId, companyId, campaignId, campaignCallId } = req.body;
 
       // Use public webhook URL - req.get('host') returns internal Docker hostname
       const baseUrl = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
@@ -41,7 +41,9 @@ export default (sessionManager: CallSessionManager) => {
         from: process.env.TWILIO_PHONE_NUMBER!,
         agentId,
         companyId,
-        direction: 'outbound'
+        direction: 'outbound',
+        campaignId,
+        campaignCallId
       });
 
       res.json({

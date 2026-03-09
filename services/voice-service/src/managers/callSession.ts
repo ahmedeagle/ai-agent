@@ -9,6 +9,7 @@ const redis = new Redis(process.env.REDIS_URL!);
 
 const BILLING_SERVICE_URL = `http://billing-service:${process.env.BILLING_SERVICE_PORT || 3015}`;
 const ADMIN_SERVICE_URL = `http://admin-service:${process.env.ADMIN_SERVICE_PORT || 3004}`;
+const CAMPAIGNS_SERVICE_URL = `http://campaigns-service:${process.env.CAMPAIGNS_SERVICE_PORT || 3016}`;
 
 interface CallSession {
   id: string;
@@ -21,6 +22,8 @@ interface CallSession {
   status: 'initiated' | 'ringing' | 'in-progress' | 'completed' | 'failed';
   startTime: Date;
   endTime?: Date;
+  campaignId?: string;
+  campaignCallId?: string;
   transcript: Array<{
     speaker: 'ai' | 'user';
     text: string;
@@ -87,6 +90,8 @@ export class CallSessionManager {
       direction: data.direction!,
       status: 'initiated',
       startTime: new Date(),
+      campaignId: data.campaignId,
+      campaignCallId: data.campaignCallId,
       transcript: []
     };
 
@@ -236,7 +241,45 @@ export class CallSessionManager {
       logger.warn('Failed to persist call completion to database:', error instanceof Error ? error.message : 'Unknown error');
     }
 
+    // Notify campaigns service if this was a campaign call
+    if (session.campaignId && session.campaignCallId) {
+      try {
+        const durationSeconds = Math.round(durationMs / 1000);
+        await axios.patch(`${CAMPAIGNS_SERVICE_URL}/campaigns/calls/${session.campaignCallId}`, {
+          status: 'completed',
+          callSid: callSid,
+          callDuration: durationSeconds,
+          callOutcome: 'answered'
+        });
+        logger.info(`Campaign call updated: ${session.campaignCallId}`);
+      } catch (error) {
+        logger.warn('Failed to update campaign call:', error instanceof Error ? error.message : 'Unknown error');
+      }
+    }
+
     logger.info(`Call session ended: ${session.id}`);
+  }
+
+  async handleFailedCall(callSid: string, reason: string): Promise<void> {
+    const session = await this.getSession(callSid);
+    if (!session) return;
+
+    // Remove from active calls
+    await redis.srem(`company:${session.companyId}:active_calls`, callSid);
+
+    // Notify campaigns service if this was a campaign call
+    if (session.campaignId && session.campaignCallId) {
+      try {
+        await axios.patch(`${CAMPAIGNS_SERVICE_URL}/campaigns/calls/${session.campaignCallId}`, {
+          status: 'failed',
+          callSid: callSid,
+          callOutcome: reason
+        });
+        logger.info(`Campaign call marked failed (${reason}): ${session.campaignCallId}`);
+      } catch (error) {
+        logger.warn('Failed to update campaign call:', error instanceof Error ? error.message : 'Unknown error');
+      }
+    }
   }
 
   async getActiveCalls(companyId: string): Promise<CallSession[]> {

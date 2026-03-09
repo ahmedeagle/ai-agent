@@ -190,6 +190,9 @@ export class TwilioHandler {
 
     if (status === 'completed') {
       await this.sessionManager.endSession(callSid);
+    } else if (['busy', 'failed', 'no-answer'].includes(status)) {
+      // For failed calls, also notify campaigns service and clean up
+      await this.sessionManager.handleFailedCall(callSid, status);
     }
   }
 
