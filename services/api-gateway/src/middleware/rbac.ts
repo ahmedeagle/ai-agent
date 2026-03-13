@@ -21,38 +21,38 @@ const ROUTE_PERMISSIONS: {
   minRole: string;
 }[] = [
   // Super admin only
-  { pattern: /\/company/, methods: ['DELETE'], minRole: 'super_admin' },
+  { pattern: /\/api\/admin\/company/, methods: ['DELETE'], minRole: 'super_admin' },
 
   // Admin+
-  { pattern: /\/user/, methods: ['POST', 'DELETE'], minRole: 'admin' },
-  { pattern: /\/user\/.*\/role/, methods: ['PUT'], minRole: 'admin' },
-  { pattern: /\/billing\/packages/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'admin' },
-  { pattern: /\/company/, methods: ['PUT'], minRole: 'admin' },
-  { pattern: /\/audit-log/, methods: ['GET'], minRole: 'admin' },
+  { pattern: /\/api\/admin\/user/, methods: ['POST', 'DELETE'], minRole: 'admin' },
+  { pattern: /\/api\/admin\/user\/.*\/role/, methods: ['PUT'], minRole: 'admin' },
+  { pattern: /\/api\/billing\/packages/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'admin' },
+  { pattern: /\/api\/admin\/company/, methods: ['PUT'], minRole: 'admin' },
+  { pattern: /\/api\/admin\/audit-log/, methods: ['GET'], minRole: 'admin' },
 
   // Supervisor+
-  { pattern: /\/monitor/, methods: ['GET', 'POST'], minRole: 'supervisor' },
-  { pattern: /\/agent/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
-  { pattern: /\/ivr/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
-  { pattern: /\/queue/, methods: ['POST', 'DELETE'], minRole: 'supervisor' },
-  { pattern: /\/campaign/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
-  { pattern: /\/qa-rules/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
-  { pattern: /\/tool/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
+  { pattern: /\/api\/admin\/monitor/, methods: ['GET', 'POST'], minRole: 'supervisor' },
+  { pattern: /\/api\/admin\/agent/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
+  { pattern: /\/api\/ivr/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
+  { pattern: /\/api\/admin\/queue/, methods: ['POST', 'DELETE'], minRole: 'supervisor' },
+  { pattern: /\/api\/campaigns/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
+  { pattern: /\/api\/qa\/rules/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
+  { pattern: /\/api\/admin\/tool/, methods: ['POST', 'PUT', 'DELETE'], minRole: 'supervisor' },
 
   // Agent+ (read most things, manage calls)
-  { pattern: /\/call/, methods: ['GET', 'POST'], minRole: 'agent' },
-  { pattern: /\/sms/, methods: ['GET', 'POST'], minRole: 'agent' },
-  { pattern: /\/voicemail/, methods: ['GET', 'POST'], minRole: 'agent' },
-  { pattern: /\/whatsapp/, methods: ['GET', 'POST'], minRole: 'agent' },
-  { pattern: /\/knowledge-base/, methods: ['GET'], minRole: 'agent' },
+  { pattern: /\/api\/(admin|voice)\/call/, methods: ['GET', 'POST'], minRole: 'agent' },
+  { pattern: /\/api\/sms/, methods: ['GET', 'POST'], minRole: 'agent' },
+  { pattern: /\/api\/admin\/voicemail/, methods: ['GET', 'POST'], minRole: 'agent' },
+  { pattern: /\/api\/whatsapp/, methods: ['GET', 'POST'], minRole: 'agent' },
+  { pattern: /\/api\/knowledge-base/, methods: ['GET'], minRole: 'agent' },
 
   // Viewer+ (read-only access)
-  { pattern: /\/analytics/, methods: ['GET'], minRole: 'viewer' },
-  { pattern: /\/billing/, methods: ['GET'], minRole: 'viewer' },
-  { pattern: /\/agent/, methods: ['GET'], minRole: 'viewer' },
-  { pattern: /\/qa-results/, methods: ['GET'], minRole: 'viewer' },
-  { pattern: /\/queue/, methods: ['GET'], minRole: 'viewer' },
-  { pattern: /\/ivr/, methods: ['GET'], minRole: 'viewer' },
+  { pattern: /\/api\/analytics/, methods: ['GET'], minRole: 'viewer' },
+  { pattern: /\/api\/billing/, methods: ['GET'], minRole: 'viewer' },
+  { pattern: /\/api\/admin\/agent/, methods: ['GET'], minRole: 'viewer' },
+  { pattern: /\/api\/qa/, methods: ['GET'], minRole: 'viewer' },
+  { pattern: /\/api\/admin\/queue/, methods: ['GET'], minRole: 'viewer' },
+  { pattern: /\/api\/ivr/, methods: ['GET'], minRole: 'viewer' },
 ];
 
 function getRoleLevel(role: string): number {
@@ -83,8 +83,8 @@ export const rbacMiddleware = (
 
     const userRole = req.user.role;
     const method = req.method.toUpperCase();
-    // Strip /api/service-name prefix to get the downstream path
-    const path = req.originalUrl.replace(/^\/api\/[^/]+/, '');
+    // Use the full path for matching (patterns include /api/)
+    const path = req.originalUrl.split('?')[0]; // Remove query params
 
     // Find the most specific matching permission rule
     let matchedRule: typeof ROUTE_PERMISSIONS[0] | null = null;

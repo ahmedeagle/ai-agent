@@ -63,6 +63,8 @@ router.post('/register', async (req, res) => {
     const user = company.users[0];
 
     // Generate token
+    const jwtSecret = process.env.JWT_SECRET || 'default-secret-change-in-production';
+    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
     const token = jwt.sign(
       {
         userId: user.id,
@@ -70,8 +72,8 @@ router.post('/register', async (req, res) => {
         role: user.role,
         companyId: company.id
       },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      jwtSecret,
+      { expiresIn: jwtExpiresIn }
     );
 
     res.status(201).json({
@@ -127,6 +129,8 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    const jwtSecret = process.env.JWT_SECRET || 'default-secret-change-in-production';
+    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
     const token = jwt.sign(
       {
         userId: user.id,
@@ -134,8 +138,8 @@ router.post('/login', async (req, res) => {
         role: user.role,
         companyId: user.companyId
       },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      jwtSecret,
+      { expiresIn: jwtExpiresIn }
     );
 
     res.json({
