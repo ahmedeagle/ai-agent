@@ -56,7 +56,8 @@ const ROUTE_PERMISSIONS: {
 ];
 
 function getRoleLevel(role: string): number {
-  return ROLE_HIERARCHY[role] ?? 0;
+  // Normalize to lowercase for case-insensitive comparison
+  return ROLE_HIERARCHY[role.toLowerCase()] ?? 0;
 }
 
 function hasPermission(userRole: string, requiredRole: string): boolean {
