@@ -78,6 +78,14 @@ app.use('/api/voice/webhook', urlParser, createProxyMiddleware({
   onProxyReq: fixRequestBody
 }));
 
+// WhatsApp Meta webhook - must be public for verification & incoming messages
+app.use('/api/whatsapp/webhook', jsonParser, createProxyMiddleware({
+  target: `http://whatsapp-service:${process.env.WHATSAPP_SERVICE_PORT || 3014}`,
+  changeOrigin: true,
+  pathRewrite: { '^/api/whatsapp': '/whatsapp' },
+  onProxyReq: fixRequestBody
+}));
+
 // Protected routes - require authentication
 app.use('/api/voice', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
   target: `http://voice-service:${process.env.VOICE_SERVICE_PORT || 3001}`,
