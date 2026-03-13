@@ -74,7 +74,8 @@ app.use('/stream', streamProxy);
 app.use('/api/voice/webhook', urlParser, createProxyMiddleware({
   target: `http://voice-service:${process.env.VOICE_SERVICE_PORT || 3001}`,
   changeOrigin: true,
-  pathRewrite: { '^/api/voice': '' }
+  pathRewrite: { '^/api/voice': '' },
+  onProxyReq: fixRequestBody
 }));
 
 // Protected routes - require authentication
