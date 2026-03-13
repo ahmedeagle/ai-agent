@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { authMiddleware } from './middleware/auth';
 import { rbacMiddleware } from './middleware/rbac';
@@ -58,6 +59,23 @@ const fixRequestBody = (proxyReq: any, req: any) => {
 // Parse body for auth/rbac middleware, then restream for proxy
 const jsonParser = express.json();
 const urlParser = express.urlencoded({ extended: true });
+
+// ========== WEBSOCKET STREAM PROXY (NO AUTH) ==========
+// Twilio media streams — must be before any body-parsing middleware
+const streamProxy = createProxyMiddleware({
+  target: `http://voice-service:${process.env.VOICE_SERVICE_PORT || 3001}`,
+  changeOrigin: true,
+  ws: true,
+});
+app.use('/stream', streamProxy);
+
+// ========== PUBLIC WEBHOOKS (NO AUTH) ==========
+// Twilio & external service webhooks - must come BEFORE protected routes
+app.use('/api/voice/webhook', urlParser, createProxyMiddleware({
+  target: `http://voice-service:${process.env.VOICE_SERVICE_PORT || 3001}`,
+  changeOrigin: true,
+  pathRewrite: { '^/api/voice': '' }
+}));
 
 // Protected routes - require authentication
 app.use('/api/voice', jsonParser, authMiddleware, rbacMiddleware, createProxyMiddleware({
@@ -202,8 +220,17 @@ app.use('/api/ai-engine', authMiddleware, rbacMiddleware, createProxyMiddleware(
 // Error handling
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
+// Start server with HTTP server for WebSocket upgrade support
+const server = createServer(app);
+
+// Enable WebSocket upgrade for Twilio media stream proxy
+server.on('upgrade', (req, socket, head) => {
+  if (req.url?.startsWith('/stream')) {
+    streamProxy.upgrade(req, socket, head);
+  }
+});
+
+server.listen(PORT, () => {
   logger.info(`🚀 API Gateway running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

@@ -121,9 +121,11 @@ export default (twilioHandler: TwilioHandler, sessionManager?: CallSessionManage
         agentConfig: validation.agentConfig
       });
 
+      const inboundBaseUrl = process.env.WEBHOOK_BASE_URL || `wss://${req.get('host')}`;
+      const inboundWsUrl = inboundBaseUrl.replace(/^https?:\/\//, 'wss://');
       const connect = response.connect();
       connect.stream({
-        url: `wss://${req.get('host')}/stream/${CallSid}`
+        url: `${inboundWsUrl}/stream/${CallSid}`
       });
 
       res.type('text/xml');
@@ -156,9 +158,11 @@ export default (twilioHandler: TwilioHandler, sessionManager?: CallSessionManage
 
       response.say({ voice: 'Polly.Amy' }, 'Connecting you now. Please hold.');
 
+      const ivrBaseUrl = process.env.WEBHOOK_BASE_URL || `wss://${req.get('host')}`;
+      const ivrWsUrl = ivrBaseUrl.replace(/^https?:\/\//, 'wss://');
       const connect = response.connect();
       connect.stream({
-        url: `wss://${req.get('host')}/stream/${callSid}`
+        url: `${ivrWsUrl}/stream/${callSid}`
       });
     } catch (error) {
       console.error('IVR route error:', error);
@@ -185,9 +189,11 @@ export default (twilioHandler: TwilioHandler, sessionManager?: CallSessionManage
         agentConfig: { id: agentId, companyId }
       });
 
+      const connBaseUrl = process.env.WEBHOOK_BASE_URL || `wss://${req.get('host')}`;
+      const connWsUrl = connBaseUrl.replace(/^https?:\/\//, 'wss://');
       const connect = response.connect();
       connect.stream({
-        url: `wss://${req.get('host')}/stream/${callSid}`
+        url: `${connWsUrl}/stream/${callSid}`
       });
     } catch (error) {
       console.error('Connect error:', error);
